@@ -1,0 +1,33 @@
+# Binaries
+/cerebro
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build output
+/dist/
+/bin/
+
+# Test
+*.test
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+vendor/
+
+# Cerebro data (don't commit brain files)
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

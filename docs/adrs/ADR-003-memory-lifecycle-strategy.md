@@ -68,16 +68,27 @@ When a memory is retrieved and actually used (incorporated into a response or de
 
 ### Consolidation
 
-Triggered periodically or by `cerebro consolidate`:
+Triggered **opportunistically** (no background scheduler) or by explicit `cerebro consolidate`:
+
+**Trigger conditions (combination — any one is sufficient):**
+- Write threshold: 50 unconsolidated episodes accumulated (checked after each `remember`)
+- Session boundary: consolidation hasn't run since session start (checked on `recall`)
+- Time threshold: >24h since last consolidation AND >10 unconsolidated episodes (checked on `recall`)
+- Explicit: user runs `cerebro consolidate`
+
+All triggers are evaluated lazily against a `last_consolidated_at` timestamp in `schema_meta`. No daemon, no cron, no background process — the brain is only active when the orchestrator is using it.
+
+**Process:**
 1. Select unconsolidated episodes (`status='active', type='episode'`)
 2. Cluster by semantic similarity and graph connectivity
 3. For each cluster, LLM generates higher-order nodes (concepts, procedures, reflections)
 4. Link new nodes to source episodes via `learned_from` edges
 5. Mark source episodes as `status='consolidated'` (accelerated decay)
+6. Update `schema_meta`: `last_consolidated_at = now()`
 
 ### Eviction
 
-Triggered periodically or by `cerebro gc`:
+Triggered opportunistically (on session start if overdue) or by `cerebro gc`:
 1. Compute retrieval_score for all active nodes
 2. Candidates: score < eviction_threshold (default 0.01)
 3. Safety checks before eviction:
@@ -116,7 +127,7 @@ Triggered periodically or by `cerebro gc`:
 
 ### Risks
 - **Over-aggressive eviction.** If decay rates are too high or thresholds too aggressive, useful memories may be evicted prematurely. Mitigation: conservative defaults (threshold=0.01), archive not delete, tune based on observed behavior.
-- **Consolidation timing.** If consolidation runs too infrequently, episodes accumulate and search quality degrades. If too frequently, consolidation overhead is high. Mitigation: configurable triggers, sensible defaults (after every 10 sessions or 100 unconsolidated episodes).
+- **Consolidation timing.** If consolidation runs too infrequently, episodes accumulate and search quality degrades. If too frequently, consolidation overhead is high. Mitigation: combination of opportunistic triggers (write threshold: 50 episodes, time threshold: 24h, session boundary) with configurable defaults. No background scheduler — triggers are checked lazily on existing operations.
 
 ## References
 - [Research: Agent memory architectures](../research/agent-memory-architectures-research.md)

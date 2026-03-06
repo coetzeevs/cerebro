@@ -26,16 +26,22 @@ Adopt a hybrid lifecycle strategy combining:
 
 ### Write Path: Reconciliation
 
-Every new memory candidate is reconciled against existing knowledge before storage:
+Every new memory candidate is reconciled against existing knowledge before storage. The reconciliation protocol follows Mem0's four-operation model, but the **decision-maker is the calling agent (Claude), not an internal LLM** (see [ADR-006](ADR-006-claude-code-integration-pattern.md)).
 
-1. Generate embedding for candidate
-2. Vector search existing nodes of compatible types (cosine > 0.85)
-3. For each near-match, LLM determines one of:
-   - **ADD** — new information, store as new node
-   - **UPDATE** — refines existing node, modify in-place
-   - **DELETE** — contradicts existing, mark old as `superseded`, store new with `supersedes` edge
-   - **NOOP** — already captured, optionally reinforce existing node
+**Protocol (caller-driven):**
+1. Caller formulates memory content and classifies type
+2. `cerebro search "<content>" --threshold 0.7` — Cerebro generates embedding and returns similar nodes
+3. Caller reviews results and determines one of:
+   - **ADD** — new information → `cerebro add --type <type> --importance <n> "<content>"`
+   - **UPDATE** — refines existing → `cerebro update <id> --content "<refined>"`
+   - **DELETE** — contradicts existing → `cerebro supersede <old_id> --type <type> "<new>"`
+   - **NOOP** — already captured → optionally `cerebro reinforce <id>`
 4. If no near-match, ADD as new node
+5. Caller creates edges for relationships: `cerebro edge <src> <tgt> <relation>`
+
+**Why caller-driven:** The calling agent (Claude in Claude Code) has full session context — it knows what it just learned, why it matters, and how it relates to current work. This produces better reconciliation decisions than a separate LLM call with a narrow prompt, at zero incremental cost (covered by Max subscription).
+
+**Cerebro's role:** Embedding generation, vector similarity search, composite scoring, storage operations. No LLM reasoning.
 
 This prevents the unbounded growth that plagues append-only systems.
 
@@ -68,23 +74,21 @@ When a memory is retrieved and actually used (incorporated into a response or de
 
 ### Consolidation
 
-Triggered **opportunistically** (no background scheduler) or by explicit `cerebro consolidate`:
+Triggered by the calling agent via the `/consolidate` skill, or explicitly by user request. There is no background scheduler — consolidation is a caller-driven reasoning process.
 
-**Trigger conditions (combination — any one is sufficient):**
-- Write threshold: 50 unconsolidated episodes accumulated (checked after each `remember`)
-- Session boundary: consolidation hasn't run since session start (checked on `recall`)
-- Time threshold: >24h since last consolidation AND >10 unconsolidated episodes (checked on `recall`)
-- Explicit: user runs `cerebro consolidate`
+**When to consolidate:** The `cerebro stats` command reports unconsolidated episode count. CLAUDE.md instructions guide Claude to consolidate when episode count exceeds ~30-50, at natural stopping points, or when `cerebro recall --prime` reports consolidation is overdue.
 
-All triggers are evaluated lazily against a `last_consolidated_at` timestamp in `schema_meta`. No daemon, no cron, no background process — the brain is only active when the orchestrator is using it.
+**Process (caller-driven):**
+1. `cerebro list --type episode --status active` — returns unconsolidated episodes
+2. Caller clusters episodes by theme/topic and synthesizes higher-order knowledge
+3. For each synthesized insight, caller creates new nodes:
+   - `cerebro add --type concept "<synthesized fact>"`
+   - `cerebro add --type procedure "<learned rule>"`
+   - `cerebro add --type reflection "<meta observation>"`
+4. Caller links new nodes to source episodes: `cerebro edge <new_id> <episode_id> learned_from`
+5. Caller marks sources: `cerebro mark-consolidated <episode_id> [...]`
 
-**Process:**
-1. Select unconsolidated episodes (`status='active', type='episode'`)
-2. Cluster by semantic similarity and graph connectivity
-3. For each cluster, LLM generates higher-order nodes (concepts, procedures, reflections)
-4. Link new nodes to source episodes via `learned_from` edges
-5. Mark source episodes as `status='consolidated'` (accelerated decay)
-6. Update `schema_meta`: `last_consolidated_at = now()`
+**Why caller-driven:** Consolidation requires high-quality synthesis — identifying patterns across experiences and generating useful abstractions. The calling agent (Claude) has the richest context for this reasoning. The quality of consolidated knowledge directly impacts future recall, so it's worth using the best available reasoning rather than a separate, context-poor LLM call.
 
 ### Eviction
 
@@ -121,15 +125,18 @@ Triggered opportunistically (on session start if overdue) or by `cerebro gc`:
 - **Predictable scale.** With active eviction, the brain stabilizes at a manageable size rather than growing forever.
 
 ### Negative
-- **LLM cost for reconciliation.** Every write requires an LLM call to determine ADD/UPDATE/DELETE/NOOP. This adds latency and cost. Mitigation: use a fast, cheap model (e.g., Haiku) for reconciliation.
-- **Risk of incorrect reconciliation.** The LLM might incorrectly mark a genuinely new memory as NOOP, or incorrectly DELETE a still-valid memory. Mitigation: archive, don't hard-delete. All superseded/evicted memories are recoverable.
-- **Consolidation quality depends on LLM.** The reflections generated are only as good as the LLM's synthesis capability. Low-quality consolidation could produce misleading procedures. Mitigation: consolidation results can be reviewed via `cerebro inspect`.
+- **Multi-step remember operations.** Each write involves 2-3 CLI calls (search → add/update/supersede → edge). More tool invocations than a single monolithic `remember` command. Mitigation: operations are fast (<50ms each), and reconciliation quality gain justifies the extra calls.
+- **Risk of incorrect reconciliation.** The caller might incorrectly mark a genuinely new memory as NOOP, or incorrectly supersede a still-valid memory. Mitigation: archive, don't hard-delete. All superseded/evicted memories are recoverable via `nodes_archive`.
+- **Consolidation quality depends on caller.** The synthesized concepts/procedures are only as good as the calling agent's reasoning. Mitigation: consolidation results can be reviewed via `cerebro get <id>` and `cerebro list --type reflection`.
+- **Consolidation requires explicit invocation.** Without internal LLM, cerebro can't autonomously consolidate. Mitigation: `cerebro stats` reports unconsolidated count; `cerebro recall --prime` flags when consolidation is overdue; CLAUDE.md instructions guide the agent.
 
 ### Risks
 - **Over-aggressive eviction.** If decay rates are too high or thresholds too aggressive, useful memories may be evicted prematurely. Mitigation: conservative defaults (threshold=0.01), archive not delete, tune based on observed behavior.
-- **Consolidation timing.** If consolidation runs too infrequently, episodes accumulate and search quality degrades. If too frequently, consolidation overhead is high. Mitigation: combination of opportunistic triggers (write threshold: 50 episodes, time threshold: 24h, session boundary) with configurable defaults. No background scheduler — triggers are checked lazily on existing operations.
+- **Consolidation neglect.** If the calling agent doesn't invoke consolidation, episodes accumulate and search quality degrades. Mitigation: `cerebro recall --prime` output includes a consolidation-overdue warning when unconsolidated episodes exceed threshold. CLAUDE.md instructions create a behavioral nudge.
+- **Caller-dependent consistency.** Different agent sessions might make different reconciliation decisions for similar content. Mitigation: the `/remember` skill defines a deterministic reconciliation protocol. The search → reason → execute flow produces consistent results given consistent skill instructions.
 
 ## References
+- [ADR-006: Claude Code integration pattern](ADR-006-claude-code-integration-pattern.md) — caller-driven reconciliation rationale
 - [Research: Agent memory architectures](../research/agent-memory-architectures-research.md)
 - Packer et al. (2024). "MemGPT: Towards LLMs as Operating Systems." ICLR 2024.
 - Park et al. (2023). "Generative Agents." UIST 2023.

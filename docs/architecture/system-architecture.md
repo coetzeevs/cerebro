@@ -1,7 +1,7 @@
 # Cerebro: System Architecture
 
-> **Version:** 0.1.0 — Draft
-> **Date:** 2026-03-04
+> **Version:** 0.2.0 — Draft
+> **Date:** 2026-03-06
 > **Status:** Proposed
 > **Supersedes:** `docs/sqlit-graph-architecture.md` (initial musing)
 
@@ -26,43 +26,51 @@ Cerebro is a **local-first, zero-infrastructure persistent memory system** for A
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        ORCHESTRATOR LLM                          │
-│                    (Claude, GPT, etc.)                            │
+│                       CLAUDE CODE SESSION                        │
+│                    (cognition layer — the agent)                  │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│  ┌─────────────┐    ┌──────────────┐    ┌────────────────────┐  │
-│  │   RECALL    │    │   REMEMBER   │    │     INJECT         │  │
-│  │ query brain │    │ store memory │    │ format for         │  │
-│  │ at task     │    │ after task   │    │ sub-agents         │  │
-│  │ start       │    │ completion   │    │                    │  │
-│  └──────┬──────┘    └──────┬───────┘    └────────┬───────────┘  │
-│         │                  │                     │               │
-└─────────┼──────────────────┼─────────────────────┼───────────────┘
-          │                  │                     │
-          ▼                  ▼                     ▼
+│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────────┐  │
+│  │  /recall     │  │  /remember   │  │     /consolidate       │  │
+│  │  skill       │  │  skill       │  │     skill              │  │
+│  │             │  │             │  │                        │  │
+│  │ query brain │  │ reconcile +  │  │ synthesize episodes    │  │
+│  │ for context │  │ store memory │  │ → concepts/procedures  │  │
+│  └──────┬──────┘  └──────┬───────┘  └────────┬───────────────┘  │
+│         │                │                   │                   │
+│  ┌──────┴────────────────┴───────────────────┴───────────────┐  │
+│  │                   HOOKS (automatic)                        │  │
+│  │  SessionStart → prime    PreCompact → save    End → gc    │  │
+│  └──────────────────────────┬────────────────────────────────┘  │
+└─────────────────────────────┼────────────────────────────────────┘
+                              │ CLI calls
+                              ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                       CEREBRO ENGINE                             │
+│                     CEREBRO CLI (Go binary)                      │
+│                   (storage layer — data infrastructure)           │
 │                                                                  │
-│  ┌────────────┐  ┌──────────────┐  ┌────────────┐  ┌─────────┐ │
-│  │  Retrieval  │  │Reconciliation│  │ Lifecycle  │  │Embedding│ │
-│  │  (search +  │  │ (ADD/UPDATE/ │  │ (decay,    │  │Provider │ │
-│  │   graph     │  │  DELETE/NOOP)│  │  consolidate│ │(pluggable│ │
-│  │   traverse) │  │              │  │  evict)    │  │         │ │
-│  └──────┬──────┘  └──────┬───────┘  └─────┬──────┘  └────┬────┘ │
-│         │                │               │              │       │
-│         └────────────────┴───────────────┴──────────────┘       │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌───────────┐ │
+│  │  Retrieval  │  │  Storage   │  │ Lifecycle  │  │ Embedding │ │
+│  │  search +   │  │  add/upd/  │  │ decay,     │  │ Provider  │ │
+│  │  graph      │  │  supersede │  │ scoring,   │  │ (pluggable│ │
+│  │  scoring    │  │  edges     │  │ evict      │  │  Ollama/  │ │
+│  │             │  │            │  │            │  │  Voyage)  │ │
+│  └──────┬──────┘  └─────┬──────┘  └─────┬──────┘  └────┬──────┘ │
+│         └───────────────┴──────────────┴───────────────┘        │
 │                              │                                   │
 │                              ▼                                   │
 │                    ┌───────────────────┐                         │
 │                    │   brain.sqlite    │                         │
 │                    │                   │                         │
 │                    │  nodes (graph)    │                         │
-│                    │  edges (graph)    │                         │
+│                    │  edges (rels)     │                         │
 │                    │  vec_nodes (vec)  │                         │
 │                    │  nodes_archive    │                         │
 │                    └───────────────────┘                         │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+**Key separation:** Claude (the agent running in Claude Code) handles all reasoning — what to remember, how to reconcile conflicts, when to consolidate. Cerebro handles all data operations — embedding, storage, search, scoring, decay, eviction. Cerebro has no LLM dependency. See [ADR-006](../adrs/ADR-006-claude-code-integration-pattern.md) for the rationale.
 
 ---
 
@@ -108,13 +116,15 @@ reflection:  [summary, lesson, insight, open_question]
                                     └───────────────┘
 ```
 
-**Ingest:** Raw information enters from orchestrator observations.
+**Ingest:** Raw information enters from the agent's observations during a session.
 
-**Reconcile (Mem0 model):** Every new memory is compared against existing nodes via vector similarity. For each near-match (cosine > 0.85):
+**Reconcile (Mem0 protocol, caller-driven):** The calling agent searches for similar existing nodes (`cerebro search --threshold 0.7`) and reasons about each candidate. The protocol follows Mem0's four operations, but the decision-maker is the agent (Claude), not an internal LLM:
 - **ADD** — genuinely new information, no overlap
 - **UPDATE** — refines or extends an existing memory
 - **DELETE** — contradicts an existing memory (old is superseded)
 - **NOOP** — already captured, skip
+
+See section 8.1 for the detailed caller-driven flow and [ADR-006](../adrs/ADR-006-claude-code-integration-pattern.md) for the rationale.
 
 **Active:** Memories live in the active store. Their retrieval score is computed dynamically:
 ```
@@ -295,48 +305,126 @@ At session start, the orchestrator opens both stores:
 
 ---
 
-## 6. Orchestrator Integration
+## 6. Claude Code Integration
 
-### 6.1 The Orchestrator as Sole Interface
+Cerebro's primary integration target is **Claude Code** — Anthropic's agentic coding CLI. See [ADR-006](../adrs/ADR-006-claude-code-integration-pattern.md) for the full rationale.
 
-Sub-agents **never** interact with Cerebro. The orchestrator:
-1. **Recalls** relevant memory before dispatching work
-2. **Injects** formatted context into sub-agent prompts
+### 6.1 Integration Mechanisms
+
+Claude Code offers three extension points. We use all three for different purposes:
+
+| Mechanism | Token Cost | Automatic? | Role in Cerebro |
+|-----------|-----------|-----------|-----------------|
+| **Hooks** | Zero (execute outside context) | Yes — lifecycle events | Session prime, pre-compaction save, session-end GC |
+| **Skills** | ~100-200 tokens (description only); full content on invoke | Manual `/command` or Claude-auto-invoked | `/remember`, `/recall`, `/consolidate` |
+| **CLAUDE.md** | ~200-400 tokens (always loaded) | Always | Behavioral rules for when/how to use memory |
+
+**Why not MCP:** MCP tool definitions load into the context window on every turn. With 6-10 cerebro tools, that's several hundred tokens consumed permanently regardless of whether memory operations are needed. Hooks + skills are the right tradeoff for invisible infrastructure.
+
+### 6.2 Session Lifecycle
+
+```
+┌─ SESSION START ──────────────────────────────────────────────────┐
+│  SessionStart hook → cerebro recall --prime --format md          │
+│  stdout → injected into Claude's context automatically           │
+│  Claude begins session with project memory loaded                │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─ DURING WORK ────────────────────────────────────────────────────┐
+│  /remember skill — Claude reconciles and stores new memories     │
+│  /recall skill   — on-demand retrieval for specific topics       │
+│  CLAUDE.md       — rules for when to remember/recall             │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─ PRE-COMPACTION ─────────────────────────────────────────────────┐
+│  PreCompact hook → injects reminder to persist critical context  │
+│  Claude uses /remember to save key information before compaction │
+└──────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─ SESSION END ────────────────────────────────────────────────────┐
+│  SessionEnd hook → cerebro gc --threshold 0.01 --quiet           │
+│  Opportunistic eviction of decayed memories                      │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### 6.3 Agent-Managed Memory (Model B)
+
+Claude (the agent) handles all reasoning about memory. Cerebro handles all data operations:
+
+| Concern | Owner | Examples |
+|---------|-------|---------|
+| **What** to remember | Claude | "This architectural constraint is important" |
+| **How** to reconcile | Claude | "This updates existing node X" vs "This is new" |
+| **When** to consolidate | Claude | "These 5 episodes form a pattern" |
+| **What** importance to assign | Claude | "This is critical (0.9)" vs "minor note (0.3)" |
+| **Storage** operations | Cerebro | add, update, supersede, search, edge creation |
+| **Embedding** generation | Cerebro | Vector encoding via pluggable provider |
+| **Scoring** and ranking | Cerebro | Composite retrieval score computation |
+| **Decay** and eviction | Cerebro | Time-based decay, threshold eviction, archival |
+
+This model is chosen because:
+1. **Zero incremental cost** — Claude Code Max subscription covers all LLM usage. No separate API billing.
+2. **Best reasoning quality** — Claude has full session context when reasoning about memory, far richer than a separate LLM call.
+3. **Agent autonomy** — The agent manages its own brain, consistent with the cognitive metaphor.
+
+### 6.4 Sub-Agent Context Injection
+
+Sub-agents (launched via Claude Code's Task tool) **never** interact with Cerebro directly. Claude:
+1. **Recalls** relevant memory before dispatching sub-agents
+2. **Injects** formatted context into the sub-agent prompt
 3. **Observes** sub-agent results
 4. **Remembers** new knowledge from the interaction
 
-### 6.2 Memory Injection Format
-
-The orchestrator translates raw memories into authoritative sub-agent context:
+Sub-agents receive memories as authoritative context — they don't know the information comes from a memory system:
 
 ```xml
 <memory_context>
   <relevant_knowledge>
     - Project uses PostgreSQL 16 with pgvector extension
     - Module auth depends on: user, session, token
-    - API follows REST conventions; spec in /docs/api.yaml
   </relevant_knowledge>
   <applicable_rules>
     - ALWAYS update /docs/api.yaml when modifying API endpoints
-    - NEVER use raw SQL queries; use the query builder in /src/db/
     - Run `make lint` before considering code complete
   </applicable_rules>
   <past_issues>
-    - On 2026-02-20, a similar change broke session middleware because
+    - Similar change broke session middleware on 2026-02-20 because
       the token format changed without updating the validation regex.
-      Ensure token validation is consistent across modules.
   </past_issues>
 </memory_context>
 ```
 
-**Key:** Sub-agents don't know they're receiving memories. Procedures are presented as instructions. Knowledge is presented as facts. Episodes are presented as warnings.
+### 6.5 Memory Budget
 
-### 6.3 Memory Budget
+In the agent-managed model, memory budgets are **guidelines, not hard limits**. Claude decides how much context to inject based on the situation — a complex architectural task may warrant 30+ memories, while a simple typo fix may need none.
 
-- **Hard limit:** ~10,000 tokens for memory injection per sub-agent call
-- **Mandatory inclusions:** Active procedures whose trigger matches the current task type
-- **Type balance:** ~30% concepts, 30% procedures, 30% episodes, 10% reflections
-- **Prioritization:** By composite retrieval score, highest first
+**Session prime (SessionStart hook):**
+- Default: `cerebro recall --prime --limit 20 --format md`
+- The `--limit` flag is a CLI default, configurable in `~/.cerebro/config.toml`
+- Claude can request more context via `/recall` during the session if the prime was insufficient
+
+**Sub-agent injection:**
+- Claude judges how much memory context each sub-agent needs
+- Guideline: ~2,000-4,000 tokens for focused tasks, more for complex architectural work
+- No hard cap enforced by Cerebro — the agent manages its own token budget
+
+**Prioritization (applied by `cerebro recall`):**
+- Results ranked by composite retrieval score (section 3.3)
+- Active procedures whose triggers match the query are boosted
+- Type balance emerges naturally from scoring, not from rigid quotas
+
+**Configuration:**
+```toml
+# ~/.cerebro/config.toml
+[recall]
+default_limit = 20           # Default --limit for recall commands
+prime_limit = 20              # Default --limit for --prime flag
+```
+
+These defaults can be overridden on any CLI call via `--limit N`.
 
 ---
 
@@ -450,104 +538,117 @@ The `embedding_model` field on each node tracks provenance. Nodes with a mismatc
 
 ## 8. Core Operations
 
-### 8.1 Remember
+In the agent-managed model (section 6.3), core operations split into two categories:
+- **Caller-driven** — Claude orchestrates the workflow using Cerebro's building-block commands
+- **Cerebro-internal** — Cerebro handles autonomously (scoring, decay, eviction)
 
-Triggered after each orchestrator interaction.
+### 8.1 Remember (caller-driven)
 
-```
-Input: raw observation/fact/lesson from interaction
-  │
-  ▼
-Extract memory candidates (LLM call)
-  │
-  ▼
-For each candidate:
-  ├── Generate embedding (via configured provider)
-  ├── Vector search existing nodes (cosine > 0.85 threshold)
-  ├── If near-match found → LLM reconciliation:
-  │     ├── ADD:    Insert as new node + edges
-  │     ├── UPDATE: Modify existing node content/metadata
-  │     ├── DELETE: Mark existing as superseded, insert new
-  │     └── NOOP:   Skip, optionally reinforce existing
-  └── If no match → ADD: Insert new node + edges + vector
-```
-
-### 8.2 Recall
-
-Triggered at the start of each task or sub-agent dispatch.
+Triggered by Claude via the `/remember` skill during a session, or proactively when Claude identifies something worth persisting.
 
 ```
-Input: task description / user request
+Claude identifies something worth remembering
   │
   ▼
-Generate query embedding
-  │
-  ├── Vector search (top-K by cosine similarity)
-  ├── Filter by status='active'
-  ├── Score by composite (relevance × importance × recency × structural)
+Step 1: Claude formulates memory content and classifies type
+        (episode, concept, procedure, reflection)
   │
   ▼
-Graph expansion (1-2 hops from top results)
+Step 2: cerebro search "<content>" --limit 5 --threshold 0.7
+        (Cerebro handles: embedding query, vector search, scoring)
   │
   ▼
-Procedural lookup (match procedure triggers against task type)
+Step 3: Claude reviews results and reasons about reconciliation:
+  │
+  ├── No matches → ADD
+  │     cerebro add --type <type> --importance <0-1> "<content>"
+  │
+  ├── Match refines existing → UPDATE
+  │     cerebro update <id> --content "<refined content>"
+  │
+  ├── Match contradicts existing → SUPERSEDE
+  │     cerebro supersede <old_id> --type <type> --importance <0-1> "<new>"
+  │
+  └── Already captured → NOOP (optionally reinforce)
+        cerebro reinforce <id>
   │
   ▼
-Merge results from project + global stores
-  │
-  ▼
-Format into injection context (respect token budget)
+Step 4: Claude creates edges for relationships
+        cerebro edge <source_id> <target_id> <relation>
 ```
 
-### 8.3 Reflect
+The reconciliation protocol (ADD/UPDATE/DELETE/NOOP from the Mem0 model) is preserved — only the decision-maker changes. Claude reasons about reconciliation with full session context instead of a separate LLM call with a narrow prompt.
 
-Triggered **opportunistically** or by explicit `cerebro consolidate` command. There is no background scheduler or daemon — consolidation piggybacks on existing operations.
+### 8.2 Recall (Cerebro-internal + caller-invoked)
 
-**Trigger conditions (combination — any one is sufficient):**
-
-| Trigger | Condition | When Checked |
-|---------|-----------|--------------|
-| Write threshold | N unconsolidated episodes accumulated (default: 50) | After each `remember` operation |
-| Session boundary | Consolidation hasn't run since last session start | On `cerebro recall` (session start) |
-| Time threshold | >24 hours since last consolidation AND >10 unconsolidated episodes | On `cerebro recall` (session start) |
-| Explicit | User runs `cerebro consolidate` | Manual |
-
-The time threshold is checked against a `last_consolidated_at` timestamp stored in `schema_meta` — no clock-watching daemon needed. It's evaluated lazily when the brain is already being used.
+Triggered automatically at session start (via hook) or on-demand (via `/recall` skill).
 
 ```
-Check consolidation triggers (on recall or after remember)
+Input: query text (from hook --prime flag or skill arguments)
   │
   ▼
-If threshold met:
+cerebro recall "<query>" --limit N --format md
+  │  ┌─────────────────────────────────────────────────┐
+  │  │  Cerebro handles internally:                     │
+  │  │  1. Generate query embedding                     │
+  │  │  2. Vector search (top-K by cosine similarity)   │
+  │  │  3. Filter by status='active'                    │
+  │  │  4. Compute composite score:                     │
+  │  │     relevance(0.35) × importance(0.25) ×         │
+  │  │     recency(0.25) × structural(0.15)             │
+  │  │  5. Graph expansion (1-2 hops from top results)  │
+  │  │  6. Procedural lookup (trigger matching)          │
+  │  │  7. Merge project + global stores                │
+  │  │  8. Format output (respect token budget)         │
+  │  └─────────────────────────────────────────────────┘
   │
   ▼
-Select unconsolidated episodes (status='active', type='episode', not yet consolidated)
-  │
-  ▼
-Cluster by semantic similarity and graph connectivity
-  │
-  ▼
-For each cluster:
-  ├── Present to LLM: "What are the key patterns, facts, and rules from these experiences?"
-  ├── Create new concept/procedure/reflection nodes from LLM output
-  ├── Link new nodes to source episodes via 'learned_from' edges
-  └── Mark source episodes as status='consolidated'
-  │
-  ▼
-Update schema_meta: last_consolidated_at = now()
+Output: formatted memory context (markdown or JSON)
 ```
 
-Eviction (`gc`) follows the same opportunistic pattern — checked on session start, run if thresholds are met, or triggered explicitly via `cerebro gc`.
+The `--prime` flag (used by SessionStart hook) returns a curated selection optimized for session startup: high-importance active memories, recently accessed context, and active procedures.
 
-### 8.4 Forget
+### 8.3 Consolidate (caller-driven)
 
-Triggered opportunistically (on session start if overdue) or by `cerebro gc`.
+Triggered by Claude via the `/consolidate` skill when episode count warrants it, or when the user requests it. Unlike v0.1.0 which described internal LLM-driven consolidation, this is now a Claude-orchestrated process.
 
 ```
+Claude invokes /consolidate
+  │
+  ▼
+Step 1: cerebro list --type episode --status active --format json
+        → returns unconsolidated episodes
+  │
+  ▼
+Step 2: Claude clusters episodes by theme/topic and synthesizes:
+        "These 5 episodes about auth all show the same pattern..."
+  │
+  ▼
+Step 3: For each synthesized insight:
+  ├── cerebro add --type concept --importance 0.7 "<synthesized fact>"
+  ├── cerebro add --type procedure --importance 0.8 "<learned rule>"
+  └── cerebro add --type reflection --importance 0.6 "<meta observation>"
+  │
+  ▼
+Step 4: Link and mark
+  ├── cerebro edge <new_id> <episode_id> learned_from
+  └── cerebro mark-consolidated <episode_id> [<episode_id>...]
+```
+
+**When to consolidate:** Claude can check `cerebro stats` for unconsolidated episode count. CLAUDE.md instructions guide Claude to consolidate when episode count exceeds ~30-50 or at natural stopping points. The `--prime` output from session start can include a note if consolidation is overdue.
+
+### 8.4 Forget (Cerebro-internal)
+
+Triggered automatically by `SessionEnd` hook or explicitly by `cerebro gc`.
+
+```
+cerebro gc [--threshold 0.01] [--dry-run]
+  │
+  ▼
 For all nodes where status='active':
   │
   ▼
-Compute retrieval_score
+Compute retrieval_score (composite of all four signals)
   │
   ▼
 If score < eviction_threshold (default 0.01):
@@ -560,24 +661,27 @@ If score < eviction_threshold (default 0.01):
   └── If not safe: skip (let it decay further)
 ```
 
-### 8.5 Promote
+Eviction is fully automated — no LLM reasoning needed. It's pure data operations based on computed scores and graph analysis.
 
-Triggered on detection of cross-project patterns or by explicit user instruction.
+### 8.5 Promote (caller-driven)
+
+Triggered by Claude when it identifies knowledge that transcends the current project.
 
 ```
-Candidate identified (by type, content analysis, or cross-project pattern)
+Claude identifies cross-project knowledge
   │
   ▼
-Generalize content (strip project-specific paths, names, etc.)
+Step 1: Claude generalizes content (strips project-specific details)
   │
   ▼
-Check global store for conflicts (vector search)
-  │
-  ├── No conflict → Copy to global store (importance=0.5)
-  ├── Conflict → LLM reconciliation (UPDATE global or NOOP)
+Step 2: cerebro search --global "<generalized content>" --limit 3
+        (check for conflicts in global store)
   │
   ▼
-Add 'promoted_to' edge in project store
+Step 3: Claude decides:
+  ├── No conflict → cerebro promote <id> --content "<generalized>"
+  ├── Conflict → Claude reconciles (update global or skip)
+  └── Already global → NOOP
 ```
 
 ---
@@ -594,67 +698,101 @@ This is the simplest viable concurrency model and is correct for the single-orch
 
 ---
 
-## 10. Integration Model
+## 10. Implementation Model
 
-Cerebro is implemented in **Go** (see ADR-005) and distributed as a single static binary with no runtime dependencies. It exposes three integration surfaces, in order of priority:
+Cerebro is implemented in **Go** (see [ADR-005](../adrs/ADR-005-go-as-implementation-language.md)) and distributed as a single static binary with no runtime dependencies (beyond CGO for sqlite-vec).
 
-### 10.1 CLI Tool
+### 10.1 CLI Tool — Building Blocks
 
-The primary interface. The orchestrator (or user) invokes `cerebro` as a subprocess. Output is structured (JSON by default) for easy parsing.
+The CLI exposes **low-level building-block commands** that Claude orchestrates into higher-level workflows. This is a deliberate design choice: Cerebro does not have a monolithic `remember` command that internally runs reconciliation — instead, Claude performs the reasoning and calls the appropriate primitives.
 
-| Command | Description |
-|---------|-------------|
-| `cerebro init` | Initialize brain.sqlite in the project or ~/.cerebro/projects/ |
-| `cerebro remember <text>` | Ingest a memory (with reconciliation) |
-| `cerebro recall <query>` | Semantic + graph recall, returns formatted context |
-| `cerebro consolidate` | Run reflection pass on unconsolidated episodes |
-| `cerebro gc` | Run eviction pass on decayed memories |
-| `cerebro promote <node_id>` | Promote a project memory to global |
-| `cerebro status` | Show brain stats (node count by type, health, embedding status) |
-| `cerebro inspect <node_id>` | Show a specific node with its edges |
-| `cerebro graph <node_id>` | Show the subgraph around a node (N hops) |
-| `cerebro export [--format sqlite|sql]` | Dump brain (default: raw .sqlite copy) |
-| `cerebro import <file>` | Import from a dump |
+**Storage commands:**
+
+| Command | Purpose | Returns |
+|---------|---------|---------|
+| `cerebro init` | Initialize project brain | Status |
+| `cerebro add --type <type> --importance <0-1> <content>` | Store a new memory node | Node ID |
+| `cerebro update <id> --content <text> [--importance <0-1>]` | Modify existing node | Status |
+| `cerebro supersede <old_id> --type <type> --importance <0-1> <content>` | Mark old as superseded, store new with `supersedes` edge | New node ID |
+| `cerebro reinforce <id>` | Increment access_count, update last_accessed | Status |
+| `cerebro edge <source_id> <target_id> <relation>` | Create a relationship edge | Edge ID |
+| `cerebro mark-consolidated <id> [<id>...]` | Set episodes to `status='consolidated'` | Status |
+
+**Query commands:**
+
+| Command | Purpose | Returns |
+|---------|---------|---------|
+| `cerebro search <query> [--type <type>] [--limit N] [--threshold 0.7]` | Vector + graph similarity search | Scored node list |
+| `cerebro recall <query> [--limit N] [--format md\|json] [--prime]` | Full composite-scored retrieval | Formatted memory context |
+| `cerebro get <id>` | Retrieve a specific node with edges | Node detail |
+| `cerebro list [--type <type>] [--status <status>] [--since <date>]` | List nodes by filter | Node list |
+
+**Lifecycle commands:**
+
+| Command | Purpose | Returns |
+|---------|---------|---------|
+| `cerebro gc [--threshold 0.01] [--dry-run]` | Evict decayed memories to archive | Eviction report |
+| `cerebro stats` | Brain health metrics | Stats report |
+| `cerebro export [--format sqlite\|sql\|json]` | Dump brain to portable format | File path |
+| `cerebro import <file>` | Import from a dump | Status |
+
+**Global commands:**
+
+| Command | Purpose |
+|---------|---------|
+| `cerebro promote <id> --content <generalized_content>` | Copy to global store with generalized content |
+| `cerebro recall --global <query>` | Query global store alongside project store |
+
+All commands support `--format json` for structured output (consumed by hooks/skills) and default to human-readable markdown. The `--quiet` flag suppresses non-essential output (for hooks).
 
 ### 10.2 Go Library
 
-For Go-based orchestrators, Cerebro can be imported directly as a package — no subprocess overhead.
+For direct Go integration, Cerebro can be imported as a package:
 
 ```go
 import "github.com/coetzeevs/cerebro/brain"
 
 b, err := brain.Open("/path/to/project")
 
-// Remember
-err = b.Remember("The auth module uses JWT with RS256", brain.TypeConcept)
+// Low-level storage operations
+id, err := b.Add("The auth module uses JWT", brain.TypeConcept, brain.WithImportance(0.8))
+err = b.Update(id, brain.WithContent("The auth module uses JWT with RS256"))
+err = b.Reinforce(id)
 
-// Recall
-ctx, err := b.Recall("authentication implementation", brain.RecallOpts{TopK: 10})
+// Search and recall
+results, err := b.Search("authentication", brain.SearchOpts{Limit: 5, Threshold: 0.7})
+ctx, err := b.Recall("authentication", brain.RecallOpts{TopK: 10, Format: "md"})
 
-// Consolidate
-err = b.Consolidate(brain.ConsolidateOpts{MaxEpisodes: 50})
-
-// GC
-err = b.GC(brain.GCOpts{EvictionThreshold: 0.01})
+// Lifecycle
+report, err := b.GC(brain.GCOpts{EvictionThreshold: 0.01})
+stats, err := b.Stats()
 ```
 
 The CLI is a thin wrapper around this library — same code paths, same behavior.
 
-### 10.3 gRPC Service (future)
-
-Go's native protobuf/gRPC support enables a future local service mode where non-Go orchestrators (Python, TypeScript) can interact with Cerebro over a socket without shelling out to a CLI. This is not in scope for v1 but the internal package boundaries are designed to support it:
+### 10.3 Project Structure
 
 ```
-cerebro (binary)
-  ├── cmd/cerebro/       # CLI entrypoint
-  ├── brain/             # Core library (public Go API)
-  ├── internal/store/    # SQLite + sqlite-vec operations
-  ├── internal/embed/    # Embedding provider abstraction
-  ├── internal/lifecycle/ # Decay, consolidation, eviction
-  └── proto/             # gRPC service definitions (future)
+cerebro/
+  cmd/cerebro/            # CLI entrypoint (thin wrapper)
+  brain/                  # Public Go API (Brain type, operations)
+  internal/
+    store/                # SQLite + sqlite-vec operations
+    embed/                # Embedding provider abstraction
+      ollama/             # Ollama provider
+      voyage/             # Voyage AI provider
+      noop/               # No-op provider (graph-only mode)
+    lifecycle/            # Decay scoring, eviction logic
+    graph/                # Graph traversal, edge management
+  proto/                  # gRPC service definitions (future)
+  docs/                   # Architecture docs (this document)
 ```
 
-The `brain/` package is the stable public API. Everything under `internal/` is implementation detail.
+The `brain/` package is the stable public API. `internal/` packages are implementation details. Note: there is no `internal/reconcile/` package — reconciliation reasoning lives in Claude's skills, not in Go code.
+
+### 10.4 gRPC Service (future)
+
+Go's native protobuf/gRPC support enables a future local service mode for non-Claude-Code orchestrators. Not in scope for v1, but internal package boundaries support it.
 
 ---
 
@@ -678,9 +816,10 @@ The `brain/` package is the stable public API. Everything under `internal/` is i
 |----------|--------|-----------|-----|
 | Storage engine | SQLite + sqlite-vec | Single-file, zero-infra, SQL-native graph+vector in one store | ADR-001 |
 | Embedding strategy | Pluggable provider; nomic-embed-text-v1.5 via Ollama recommended | Provider-agnostic. Local default for zero-cost offline use. API providers supported. | ADR-002 |
-| Memory lifecycle | Mem0 reconciliation + Generative Agents decay/reflection | Prevents unbounded growth. Type-aware lifecycle. | ADR-003 |
+| Memory lifecycle | Mem0 reconciliation protocol + Generative Agents decay/reflection | Prevents unbounded growth. Type-aware lifecycle. Reconciliation is caller-driven. | ADR-003 |
 | Scoping model | Multi-file (project.sqlite + global.sqlite) | Follows git-config precedence. Portable per-project brains. | ADR-004 |
 | Implementation language | Go | Type-safe, single-binary distribution, native protobuf/gRPC support, performant. | ADR-005 |
+| Integration pattern | Claude Code hooks + skills + CLAUDE.md (agent-managed memory) | Zero incremental LLM cost (Max subscription). Agent controls its own brain. Minimal token overhead. | ADR-006 |
 
 ---
 
@@ -689,24 +828,28 @@ The `brain/` package is the stable public API. Everything under `internal/` is i
 | # | Question | Decision | Rationale |
 |---|----------|----------|-----------|
 | 1 | Implementation language | **Go** | Type-safe, performant, single-binary distribution, protobuf/gRPC native, lower learning curve than Rust. See ADR-005. |
-| 2 | Consolidation triggers | **Opportunistic combination** | Write threshold (50 episodes), session boundary, time threshold (24h) — all checked lazily, no scheduled jobs. See section 8.3. |
+| 2 | Consolidation triggers | **Claude-driven via `/consolidate` skill** | Claude decides when to consolidate based on episode count and natural stopping points. `cerebro stats` reports unconsolidated count. No background scheduler. |
 | 3 | Global memory initialization | **Starts empty** | Seed memories would be assumptions about the user's ecosystem. Global memory is populated organically through promotion from project brains. |
 | 4 | Brain portability format | **Raw .sqlite copy (default), SQL text dump (secondary)** | Raw copy is most efficient. SQL text via `cerebro export --format sql` for cross-platform portability. Portability is not the primary directive. |
 | 5 | Observability | **Deferred to future work** | Not part of v1 architecture. Tracked as a future addition. |
+| 6 | LLM for reconciliation/consolidation | **Claude (the calling agent) handles all reasoning** | Max subscription covers usage. Agent has richest context for decisions. Cerebro has no LLM dependency. See ADR-006. |
+| 7 | Integration mechanism | **Hooks + skills + CLAUDE.md (not MCP)** | MCP tool definitions consume context tokens permanently. Hooks are zero-cost. Skills load only on invoke. See ADR-006. |
 
 ---
 
 ## 14. Future Work
 
-- **gRPC service mode.** Local socket-based service for non-Go orchestrators. Internal boundaries are designed to support this (see section 10.3).
-- **Observability.** Metrics export (node counts, recall latency, eviction rates) for monitoring orchestrator health.
+- **gRPC service mode.** Local socket-based service for non-Claude-Code orchestrators. Internal boundaries support this (see section 10.4).
+- **Observability.** Metrics export (node counts, recall latency, eviction rates) for monitoring brain health.
 - **UI/visualization.** Brain inspection tooling, graph visualization, dashboards.
-- **Multi-user collaboration.** Sharing brains between team members.
+- **Multi-orchestrator support.** Adding an internal LLM provider so cerebro can operate autonomously with orchestrators that can't perform reconciliation reasoning (non-Claude-Code agents).
+- **`UserPromptSubmit` hook augmentation.** Optionally augment every prompt with lightweight cerebro context (e.g., active procedures). Deferred due to latency concerns.
 
 ---
 
 ## 15. What This Architecture Does NOT Cover
 
-- **Sub-agent implementation.** Cerebro is storage + retrieval. How the orchestrator is built, how sub-agents are dispatched — that's the orchestrator's domain.
-- **LLM selection.** Which LLM powers the orchestrator or the memory extraction/reconciliation calls.
-- **Orchestrator design.** How the orchestrator decides what to remember, when to recall, or how to format context for sub-agents — that's orchestrator logic, not Cerebro's concern.
+- **Sub-agent implementation.** Cerebro is storage + retrieval. How sub-agents are dispatched — that's the orchestrator's domain.
+- **Orchestrator design beyond Claude Code.** The integration pattern (section 6) is Claude Code-specific. Other orchestrators would need their own integration layer, though the CLI is universal.
+- **LLM model selection.** Which Claude model version is used in Claude Code sessions is outside Cerebro's control.
+- **Skill prompt engineering.** The exact prompts in `/remember`, `/recall`, `/consolidate` skills will evolve through use. This architecture defines the protocol; skill prompts are implementation details.

@@ -73,13 +73,13 @@ type EmbeddingProvider interface {
 ```
 
 ### Protobuf / gRPC (Future)
-Go has first-class protobuf and gRPC support via `google.golang.org/protobuf` and `google.golang.org/grpc`. When/if Cerebro adds a service mode (section 10.3 of the architecture), the proto definitions compile directly to Go server/client code. No additional tooling beyond `protoc-gen-go`.
+Go has first-class protobuf and gRPC support via `google.golang.org/protobuf` and `google.golang.org/grpc`. When/if Cerebro adds a service mode (section 10.4 of the architecture), the proto definitions compile directly to Go server/client code. No additional tooling beyond `protoc-gen-go`.
 
 ### Concurrency Model
 Go's goroutines and channels are well-suited for:
 - Background embedding queue processing (pending embeddings when provider was unavailable)
-- Opportunistic consolidation (run consolidation in background while recall returns immediately)
 - Parallel embedding during migration (re-embed N nodes concurrently)
+- Concurrent vector search across project + global stores during recall
 
 ## Project Structure
 
@@ -93,21 +93,22 @@ cerebro/
       ollama/             # Ollama provider
       voyage/             # Voyage AI provider
       noop/               # No-op provider (graph-only mode)
-    lifecycle/            # Decay, consolidation, eviction logic
-    graph/                # Graph traversal and scoring
-    reconcile/            # Mem0-style ADD/UPDATE/DELETE/NOOP
+    lifecycle/            # Decay scoring, eviction logic
+    graph/                # Graph traversal and edge management
   proto/                  # gRPC service definitions (future)
   docs/                   # Architecture docs (existing)
 ```
 
 The `brain/` package is the stable public API. `internal/` packages are implementation details that can change without breaking consumers.
 
+Note: there is no `internal/reconcile/` package. In the agent-managed model ([ADR-006](ADR-006-claude-code-integration-pattern.md)), reconciliation reasoning is performed by the calling agent (Claude), not by Cerebro. Cerebro exposes building-block commands (`search`, `add`, `update`, `supersede`) that the agent orchestrates.
+
 ## Consequences
 
 ### Positive
 - **Zero runtime dependencies.** Users download one binary. No Python, no Node, no Docker.
 - **Fast startup.** ~5ms to launch vs ~200-500ms for Python. Matters when the orchestrator invokes `cerebro recall` on every task dispatch.
-- **Type safety.** The memory lifecycle (reconciliation state machine, decay calculations, graph traversal) benefits from compile-time checks. Refactoring is safe.
+- **Type safety.** The memory lifecycle (decay calculations, composite scoring, graph traversal) benefits from compile-time checks. Refactoring is safe.
 - **Native concurrency.** Goroutines for background embedding, parallel migration, opportunistic consolidation.
 - **Cross-platform builds.** `GOOS=linux GOARCH=amd64 go build` (with CGO cross-compilation via zig).
 - **Future gRPC path.** When non-Go orchestrators need native integration, the service mode is straightforward to add.

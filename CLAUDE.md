@@ -1,0 +1,58 @@
+# Cerebro
+
+Local-first persistent memory system for AI agents. SQLite-backed with vector search (sqlite-vec).
+
+## Dogfooding
+
+This project is its own first use case. The test of cerebro's efficacy is whether the agent (Claude Code) has recall of this project's architecture, decisions, and the process used to build it — across sessions, through context compactions, without losing continuity. If cerebro works, you should know why we chose Model B over Model C, what ADR-006 decided, and how the store layer is structured without re-reading everything from scratch.
+
+## Work Tracking
+
+Until cerebro is live and can persist its own memory, we track project state in Claude Code's auto-memory files. At the start of every session, read these to restore context:
+
+- `MEMORY.md` — Current state, key decisions, user preferences (auto-loaded)
+- `work-remaining.md` — Detailed remaining work, ordered by critical path to dogfooding
+- `decisions-log.md` — Chronological record of what was decided and why
+
+These live in Claude Code's project memory directory. Update them at the end of each session or when significant decisions are made. Once cerebro is operational, these files become the seed data for the first brain.
+
+## Development
+
+```bash
+# Build
+go build ./cmd/cerebro
+
+# Test
+go test ./... -race
+
+# Test with coverage
+go test ./... -race -coverprofile=coverage.out
+go tool cover -func=coverage.out
+
+# Lint
+golangci-lint run
+```
+
+## Project Structure
+
+```
+cmd/cerebro/       CLI (Cobra commands)
+brain/             Public API (Brain type)
+internal/store/    SQLite storage, schema, CRUD, vector search
+internal/embed/    Embedding provider interface + implementations
+```
+
+## Key Patterns
+
+- **CGO required**: mattn/go-sqlite3 needs a C compiler (`xcode-select --install` on Mac)
+- **TDD (strict)**: Always write a failing test before implementing. Red → Green → Refactor. No production code without a covering test.
+- **Functional options**: `brain.WithImportance(0.8)`, `brain.WithContent("updated")`
+- **Building-block CLI**: Low-level commands composed by the calling agent
+- **Pre-commit hooks**: Install with `pre-commit install` (requires [pre-commit](https://pre-commit.com/))
+
+## Conventions
+
+- Keep test fixtures in `testdata/` directories
+- Use `t.TempDir()` for test databases — no cleanup needed
+- Node types: `episode`, `concept`, `procedure`, `reflection`
+- Format flag: `--format md` (default) or `--format json`

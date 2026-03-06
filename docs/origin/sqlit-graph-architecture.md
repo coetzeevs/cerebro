@@ -1,3 +1,5 @@
+NOTE: this document is the seed for the project and doesn't serve as an architecture reference AT ALL. It's just a starting point. We will be using this as a reference to build the actual architecture.
+
 # **SQLite Agent Brain Architecture**
 
 This document outlines the chosen architecture for our local, machine-native agent memory: **The SQLite Vector-Graph**.

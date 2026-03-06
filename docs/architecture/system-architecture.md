@@ -333,7 +333,7 @@ The orchestrator translates raw memories into authoritative sub-agent context:
 
 ### 6.3 Memory Budget
 
-- **Hard limit:** ~2,000 tokens for memory injection per sub-agent call
+- **Hard limit:** ~10,000 tokens for memory injection per sub-agent call
 - **Mandatory inclusions:** Active procedures whose trigger matches the current task type
 - **Type balance:** ~30% concepts, 30% procedures, 30% episodes, 10% reflections
 - **Prioritization:** By composite retrieval score, highest first
@@ -501,9 +501,26 @@ Format into injection context (respect token budget)
 
 ### 8.3 Reflect
 
-Triggered periodically or by `cerebro consolidate`.
+Triggered **opportunistically** or by explicit `cerebro consolidate` command. There is no background scheduler or daemon — consolidation piggybacks on existing operations.
+
+**Trigger conditions (combination — any one is sufficient):**
+
+| Trigger | Condition | When Checked |
+|---------|-----------|--------------|
+| Write threshold | N unconsolidated episodes accumulated (default: 50) | After each `remember` operation |
+| Session boundary | Consolidation hasn't run since last session start | On `cerebro recall` (session start) |
+| Time threshold | >24 hours since last consolidation AND >10 unconsolidated episodes | On `cerebro recall` (session start) |
+| Explicit | User runs `cerebro consolidate` | Manual |
+
+The time threshold is checked against a `last_consolidated_at` timestamp stored in `schema_meta` — no clock-watching daemon needed. It's evaluated lazily when the brain is already being used.
 
 ```
+Check consolidation triggers (on recall or after remember)
+  │
+  ▼
+If threshold met:
+  │
+  ▼
 Select unconsolidated episodes (status='active', type='episode', not yet consolidated)
   │
   ▼
@@ -515,11 +532,16 @@ For each cluster:
   ├── Create new concept/procedure/reflection nodes from LLM output
   ├── Link new nodes to source episodes via 'learned_from' edges
   └── Mark source episodes as status='consolidated'
+  │
+  ▼
+Update schema_meta: last_consolidated_at = now()
 ```
+
+Eviction (`gc`) follows the same opportunistic pattern — checked on session start, run if thresholds are met, or triggered explicitly via `cerebro gc`.
 
 ### 8.4 Forget
 
-Triggered periodically or by `cerebro gc`.
+Triggered opportunistically (on session start if overdue) or by `cerebro gc`.
 
 ```
 For all nodes where status='active':
@@ -572,11 +594,13 @@ This is the simplest viable concurrency model and is correct for the single-orch
 
 ---
 
-## 10. CLI Interface (cerebro)
+## 10. Integration Model
 
-The orchestrator interacts with Cerebro through a CLI tool that wraps the SQLite operations and embedding calls.
+Cerebro is implemented in **Go** (see ADR-005) and distributed as a single static binary with no runtime dependencies. It exposes three integration surfaces, in order of priority:
 
-### 10.1 Core Commands
+### 10.1 CLI Tool
+
+The primary interface. The orchestrator (or user) invokes `cerebro` as a subprocess. Output is structured (JSON by default) for easy parsing.
 
 | Command | Description |
 |---------|-------------|
@@ -589,30 +613,48 @@ The orchestrator interacts with Cerebro through a CLI tool that wraps the SQLite
 | `cerebro status` | Show brain stats (node count by type, health, embedding status) |
 | `cerebro inspect <node_id>` | Show a specific node with its edges |
 | `cerebro graph <node_id>` | Show the subgraph around a node (N hops) |
-| `cerebro export` | Dump brain to portable format (JSON or SQL text) |
+| `cerebro export [--format sqlite|sql]` | Dump brain (default: raw .sqlite copy) |
 | `cerebro import <file>` | Import from a dump |
 
-### 10.2 Programmatic API
+### 10.2 Go Library
 
-For direct integration with orchestrator code (Python/TypeScript), Cerebro exposes the same operations as a library:
+For Go-based orchestrators, Cerebro can be imported directly as a package — no subprocess overhead.
 
-```python
-from cerebro import Brain
+```go
+import "github.com/coetzeevs/cerebro/brain"
 
-brain = Brain("/path/to/project")  # Opens or creates brain.sqlite
+b, err := brain.Open("/path/to/project")
 
-# Remember
-brain.remember("The auth module uses JWT with RS256", type="concept")
+// Remember
+err = b.Remember("The auth module uses JWT with RS256", brain.TypeConcept)
 
-# Recall
-context = brain.recall("authentication implementation", top_k=10)
+// Recall
+ctx, err := b.Recall("authentication implementation", brain.RecallOpts{TopK: 10})
 
-# Consolidate
-brain.consolidate(max_episodes=50)
+// Consolidate
+err = b.Consolidate(brain.ConsolidateOpts{MaxEpisodes: 50})
 
-# GC
-brain.gc(eviction_threshold=0.01)
+// GC
+err = b.GC(brain.GCOpts{EvictionThreshold: 0.01})
 ```
+
+The CLI is a thin wrapper around this library — same code paths, same behavior.
+
+### 10.3 gRPC Service (future)
+
+Go's native protobuf/gRPC support enables a future local service mode where non-Go orchestrators (Python, TypeScript) can interact with Cerebro over a socket without shelling out to a CLI. This is not in scope for v1 but the internal package boundaries are designed to support it:
+
+```
+cerebro (binary)
+  ├── cmd/cerebro/       # CLI entrypoint
+  ├── brain/             # Core library (public Go API)
+  ├── internal/store/    # SQLite + sqlite-vec operations
+  ├── internal/embed/    # Embedding provider abstraction
+  ├── internal/lifecycle/ # Decay, consolidation, eviction
+  └── proto/             # gRPC service definitions (future)
+```
+
+The `brain/` package is the stable public API. Everything under `internal/` is implementation detail.
 
 ---
 
@@ -622,7 +664,7 @@ brain.gc(eviction_threshold=0.01)
 |--------|-----------|-----------|------------|-------|
 | DB file size | ~30-50 MB | ~150-250 MB | ~300-500 MB | Vectors dominate |
 | Vector search (768-dim) | ~4ms | ~20ms | ~40ms | Brute-force, M-series |
-| Graph traversal (2-hop) | <1ms | ~2ms | ~5ms | With indexes |
+| Graph traversal (3-hop) | <2ms | ~5ms | ~10ms | With indexes |
 | Full recall pipeline | ~10ms | ~30ms | ~60ms | Search + graph + scoring |
 | Memory per query | ~5 MB | ~20 MB | ~40 MB | Proportional to scan |
 
@@ -638,26 +680,33 @@ brain.gc(eviction_threshold=0.01)
 | Embedding strategy | Pluggable provider; nomic-embed-text-v1.5 via Ollama recommended | Provider-agnostic. Local default for zero-cost offline use. API providers supported. | ADR-002 |
 | Memory lifecycle | Mem0 reconciliation + Generative Agents decay/reflection | Prevents unbounded growth. Type-aware lifecycle. | ADR-003 |
 | Scoping model | Multi-file (project.sqlite + global.sqlite) | Follows git-config precedence. Portable per-project brains. | ADR-004 |
+| Implementation language | Go | Type-safe, single-binary distribution, native protobuf/gRPC support, performant. | ADR-005 |
 
 ---
 
-## 13. Open Questions
+## 13. Resolved Questions
 
-1. **Language/runtime for the CLI and library.** Python (fastest to prototype, best Ollama/SQLite ecosystem) vs Rust (performance, single binary distribution) vs TypeScript (if orchestrators are JS-based). Needs decision.
-
-2. **Exact consolidation triggers.** After N sessions? After N unconsolidated episodes? Time-based? Combination?
-
-3. **Global memory initialization.** Should global.sqlite ship with seed memories (common tool knowledge, general patterns) or start empty?
-
-4. **Brain portability format.** JSON dump vs SQL text dump vs a custom format for sharing brains between machines.
-
-5. **Observability.** Should Cerebro expose metrics (node counts, recall latency, eviction rates) for monitoring orchestrator health?
+| # | Question | Decision | Rationale |
+|---|----------|----------|-----------|
+| 1 | Implementation language | **Go** | Type-safe, performant, single-binary distribution, protobuf/gRPC native, lower learning curve than Rust. See ADR-005. |
+| 2 | Consolidation triggers | **Opportunistic combination** | Write threshold (50 episodes), session boundary, time threshold (24h) — all checked lazily, no scheduled jobs. See section 8.3. |
+| 3 | Global memory initialization | **Starts empty** | Seed memories would be assumptions about the user's ecosystem. Global memory is populated organically through promotion from project brains. |
+| 4 | Brain portability format | **Raw .sqlite copy (default), SQL text dump (secondary)** | Raw copy is most efficient. SQL text via `cerebro export --format sql` for cross-platform portability. Portability is not the primary directive. |
+| 5 | Observability | **Deferred to future work** | Not part of v1 architecture. Tracked as a future addition. |
 
 ---
 
-## 14. What This Architecture Does NOT Cover
+## 14. Future Work
+
+- **gRPC service mode.** Local socket-based service for non-Go orchestrators. Internal boundaries are designed to support this (see section 10.3).
+- **Observability.** Metrics export (node counts, recall latency, eviction rates) for monitoring orchestrator health.
+- **UI/visualization.** Brain inspection tooling, graph visualization, dashboards.
+- **Multi-user collaboration.** Sharing brains between team members.
+
+---
+
+## 15. What This Architecture Does NOT Cover
 
 - **Sub-agent implementation.** Cerebro is storage + retrieval. How the orchestrator is built, how sub-agents are dispatched — that's the orchestrator's domain.
 - **LLM selection.** Which LLM powers the orchestrator or the memory extraction/reconciliation calls.
-- **UI/visualization.** Brain inspection tooling, graph visualization, dashboards.
-- **Multi-user collaboration.** Cerebro is single-user. Sharing brains between team members is out of scope for v1.
+- **Orchestrator design.** How the orchestrator decides what to remember, when to recall, or how to format context for sub-agents — that's orchestrator logic, not Cerebro's concern.

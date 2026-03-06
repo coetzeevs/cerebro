@@ -53,9 +53,18 @@ func Init(path string, cfg EmbedConfig) (*Brain, error) {
 	embedder := newEmbedder(cfg)
 
 	// Set meta for embedding config
-	s.SetMeta("embedding_provider", cfg.Provider)
-	s.SetMeta("embedding_model", embedder.Model())
-	s.SetMeta("embedding_dimensions", strconv.Itoa(embedder.Dimensions()))
+	if err := s.SetMeta("embedding_provider", cfg.Provider); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("setting embedding_provider: %w", err)
+	}
+	if err := s.SetMeta("embedding_model", embedder.Model()); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("setting embedding_model: %w", err)
+	}
+	if err := s.SetMeta("embedding_dimensions", strconv.Itoa(embedder.Dimensions())); err != nil {
+		s.Close()
+		return nil, fmt.Errorf("setting embedding_dimensions: %w", err)
+	}
 
 	// Create vector table if embedding is enabled
 	if embedder.Dimensions() > 0 {
@@ -129,7 +138,7 @@ func (b *Brain) Add(content string, nodeType store.NodeType, opts ...AddOption) 
 		fn(&o)
 	}
 
-	id, err := b.store.AddNode(store.AddNodeOpts{
+	id, err := b.store.AddNode(&store.AddNodeOpts{
 		Type:           nodeType,
 		Subtype:        o.Subtype,
 		Content:        content,
@@ -144,7 +153,7 @@ func (b *Brain) Add(content string, nodeType store.NodeType, opts ...AddOption) 
 	// Generate and store embedding
 	if err := b.embedAndStore(id, content); err != nil {
 		// Node is stored but embedding failed — mark as pending
-		b.store.SetMeta("has_pending_embeddings", "true")
+		_ = b.store.SetMeta("has_pending_embeddings", "true")
 	}
 
 	return id, nil
@@ -170,7 +179,7 @@ func (b *Brain) Update(id string, opts ...UpdateOption) error {
 	// Re-embed if content changed
 	if o.Content != nil {
 		if err := b.embedAndStore(id, *o.Content); err != nil {
-			b.store.SetMeta("has_pending_embeddings", "true")
+			_ = b.store.SetMeta("has_pending_embeddings", "true")
 		}
 	}
 
@@ -184,7 +193,7 @@ func (b *Brain) Supersede(oldID, content string, nodeType store.NodeType, opts .
 		fn(&o)
 	}
 
-	newID, err := b.store.SupersedeNode(oldID, store.AddNodeOpts{
+	newID, err := b.store.SupersedeNode(oldID, &store.AddNodeOpts{
 		Type:           nodeType,
 		Subtype:        o.Subtype,
 		Content:        content,
@@ -197,7 +206,7 @@ func (b *Brain) Supersede(oldID, content string, nodeType store.NodeType, opts .
 	}
 
 	if err := b.embedAndStore(newID, content); err != nil {
-		b.store.SetMeta("has_pending_embeddings", "true")
+		_ = b.store.SetMeta("has_pending_embeddings", "true")
 	}
 
 	return newID, nil
@@ -276,7 +285,7 @@ func addDefaults() addOptions {
 // AddOption configures an Add or Supersede call.
 type AddOption func(*addOptions)
 
-func WithSubtype(s string) AddOption    { return func(o *addOptions) { o.Subtype = s } }
+func WithSubtype(s string) AddOption     { return func(o *addOptions) { o.Subtype = s } }
 func WithImportance(i float64) AddOption { return func(o *addOptions) { o.Importance = i } }
 func WithMetadata(m json.RawMessage) AddOption {
 	return func(o *addOptions) { o.Metadata = m }

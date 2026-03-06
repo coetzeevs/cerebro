@@ -16,7 +16,9 @@ func (s *Store) StoreEmbedding(nodeID string, vec []float32) error {
 	}
 
 	// Delete existing embedding for this node (upsert)
-	s.db.Exec(`DELETE FROM vec_nodes WHERE node_id = ?`, nodeID)
+	if _, err := s.db.Exec(`DELETE FROM vec_nodes WHERE node_id = ?`, nodeID); err != nil {
+		return fmt.Errorf("deleting old embedding for %s: %w", nodeID, err)
+	}
 
 	_, err = s.db.Exec(`INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)`, nodeID, string(vecJSON))
 	if err != nil {
@@ -62,10 +64,10 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 	var results []ScoredNode
 	for rows.Next() {
 		var (
-			nodeID                          string
-			distance                        float64
-			subtype, metadata, lastReinf    interface{}
-			n                               ScoredNode
+			nodeID                       string
+			distance                     float64
+			subtype, metadata, lastReinf interface{}
+			n                            ScoredNode
 		)
 
 		err := rows.Scan(
@@ -96,7 +98,7 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		}
 
 		n.Similarity = similarity
-		n.Score = compositeScore(n.Node, similarity)
+		n.Score = compositeScore(&n.Node, similarity)
 		results = append(results, n)
 
 		if len(results) >= limit {
@@ -110,7 +112,7 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 // compositeScore computes the four-signal retrieval score.
 // Weights: relevance=0.35, importance=0.25, recency=0.25, structural=0.15
 // Structural bonus is computed separately during graph expansion.
-func compositeScore(n Node, similarity float64) float64 {
+func compositeScore(n *Node, similarity float64) float64 {
 	relevance := similarity
 
 	// Importance with access reinforcement

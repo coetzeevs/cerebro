@@ -20,7 +20,7 @@ type AddNodeOpts struct {
 }
 
 // AddNode inserts a new memory node and returns its ID.
-func (s *Store) AddNode(opts AddNodeOpts) (string, error) {
+func (s *Store) AddNode(opts *AddNodeOpts) (string, error) {
 	id := uuid.New().String()
 	decayRate := DefaultDecayRate(opts.Type)
 
@@ -71,12 +71,12 @@ func (s *Store) UpdateNode(id string, opts UpdateNodeOpts) error {
 
 // SupersedeNode marks an old node as superseded and creates a new one with a
 // 'supersedes' edge. Returns the new node ID.
-func (s *Store) SupersedeNode(oldID string, opts AddNodeOpts) (string, error) {
+func (s *Store) SupersedeNode(oldID string, opts *AddNodeOpts) (string, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return "", fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	// Mark old node as superseded
 	res, err := tx.Exec(`UPDATE nodes SET status = 'superseded' WHERE id = ? AND status = 'active'`, oldID)
@@ -147,7 +147,7 @@ func (s *Store) MarkConsolidated(ids []string) error {
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback()
+	defer func() { _ = tx.Rollback() }()
 
 	stmt, err := tx.Prepare(`UPDATE nodes SET status = 'consolidated' WHERE id = ? AND type = 'episode' AND status = 'active'`)
 	if err != nil {
@@ -285,10 +285,14 @@ func (s *Store) GetStats() (*Stats, error) {
 	}
 
 	// Edge count
-	s.db.QueryRow(`SELECT COUNT(*) FROM edges`).Scan(&stats.TotalEdges)
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM edges`).Scan(&stats.TotalEdges); err != nil {
+		return nil, fmt.Errorf("counting edges: %w", err)
+	}
 
 	// Pending embeddings (nodes with no vector entry)
-	s.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE embedding_model = '' AND status = 'active'`).Scan(&stats.PendingEmbeddings)
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE embedding_model = '' AND status = 'active'`).Scan(&stats.PendingEmbeddings); err != nil {
+		return nil, fmt.Errorf("counting pending embeddings: %w", err)
+	}
 
 	// Meta
 	stats.EmbeddingModel, _ = s.GetMeta("embedding_model")

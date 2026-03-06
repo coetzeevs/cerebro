@@ -37,13 +37,13 @@ func TestInitAndOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer s2.Close()
+	s2.Close()
 }
 
 func TestAddAndGetNode(t *testing.T) {
 	s := testStore(t)
 
-	id, err := s.AddNode(AddNodeOpts{
+	id, err := s.AddNode(&AddNodeOpts{
 		Type:       TypeConcept,
 		Content:    "test concept",
 		Importance: 0.8,
@@ -77,7 +77,7 @@ func TestAddAndGetNode(t *testing.T) {
 func TestSupersedeNode(t *testing.T) {
 	s := testStore(t)
 
-	oldID, err := s.AddNode(AddNodeOpts{
+	oldID, err := s.AddNode(&AddNodeOpts{
 		Type:       TypeConcept,
 		Content:    "old fact",
 		Importance: 0.5,
@@ -86,7 +86,7 @@ func TestSupersedeNode(t *testing.T) {
 		t.Fatalf("AddNode: %v", err)
 	}
 
-	newID, err := s.SupersedeNode(oldID, AddNodeOpts{
+	newID, err := s.SupersedeNode(oldID, &AddNodeOpts{
 		Type:       TypeConcept,
 		Content:    "new fact",
 		Importance: 0.7,
@@ -120,7 +120,7 @@ func TestSupersedeNode(t *testing.T) {
 func TestReinforceNode(t *testing.T) {
 	s := testStore(t)
 
-	id, _ := s.AddNode(AddNodeOpts{Type: TypeConcept, Content: "test", Importance: 0.5})
+	id, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "test", Importance: 0.5})
 
 	if err := s.ReinforceNode(id); err != nil {
 		t.Fatalf("ReinforceNode: %v", err)
@@ -138,9 +138,15 @@ func TestReinforceNode(t *testing.T) {
 func TestListNodes(t *testing.T) {
 	s := testStore(t)
 
-	s.AddNode(AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5})
-	s.AddNode(AddNodeOpts{Type: TypeConcept, Content: "c1", Importance: 0.5})
-	s.AddNode(AddNodeOpts{Type: TypeConcept, Content: "c2", Importance: 0.5})
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "c1", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "c2", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
 
 	// List all
 	all, err := s.ListNodes(ListNodesOpts{})
@@ -167,8 +173,8 @@ func TestListNodes(t *testing.T) {
 func TestMarkConsolidated(t *testing.T) {
 	s := testStore(t)
 
-	id1, _ := s.AddNode(AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5})
-	id2, _ := s.AddNode(AddNodeOpts{Type: TypeEpisode, Content: "ep2", Importance: 0.5})
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5})
+	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "ep2", Importance: 0.5})
 
 	if err := s.MarkConsolidated([]string{id1, id2}); err != nil {
 		t.Fatalf("MarkConsolidated: %v", err)
@@ -187,9 +193,16 @@ func TestMarkConsolidated(t *testing.T) {
 func TestStats(t *testing.T) {
 	s := testStore(t)
 
-	s.AddNode(AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5})
-	s.AddNode(AddNodeOpts{Type: TypeConcept, Content: "c1", Importance: 0.5})
-	s.AddEdge("a", "b", "relates_to") // edges with nonexistent nodes won't be added due to FK
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "c1", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if _, err := s.AddEdge("a", "b", "relates_to"); err != nil {
+		// Expected: edges with nonexistent nodes won't be added due to FK
+		_ = err
+	}
 
 	stats, err := s.GetStats()
 	if err != nil {
@@ -204,6 +217,280 @@ func TestStats(t *testing.T) {
 	}
 	if stats.NodesByType["episode"] != 1 {
 		t.Errorf("expected 1 episode, got %d", stats.NodesByType["episode"])
+	}
+}
+
+func TestUpdateNode(t *testing.T) {
+	s := testStore(t)
+
+	id, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "original", Importance: 0.5})
+
+	// Update content
+	newContent := "updated content"
+	if err := s.UpdateNode(id, UpdateNodeOpts{Content: &newContent}); err != nil {
+		t.Fatalf("UpdateNode content: %v", err)
+	}
+
+	node, _ := s.GetNode(id)
+	if node.Content != "updated content" {
+		t.Errorf("expected content='updated content', got %q", node.Content)
+	}
+
+	// Update importance
+	newImportance := 0.9
+	if err := s.UpdateNode(id, UpdateNodeOpts{Importance: &newImportance}); err != nil {
+		t.Fatalf("UpdateNode importance: %v", err)
+	}
+
+	node, _ = s.GetNode(id)
+	if node.Importance != 0.9 {
+		t.Errorf("expected importance=0.9, got %f", node.Importance)
+	}
+
+	// Update both at once
+	bothContent := "both updated"
+	bothImportance := 0.3
+	if err := s.UpdateNode(id, UpdateNodeOpts{Content: &bothContent, Importance: &bothImportance}); err != nil {
+		t.Fatalf("UpdateNode both: %v", err)
+	}
+
+	node, _ = s.GetNode(id)
+	if node.Content != "both updated" || node.Importance != 0.3 {
+		t.Errorf("expected content='both updated' importance=0.3, got %q %f", node.Content, node.Importance)
+	}
+}
+
+func TestSetAndGetMeta(t *testing.T) {
+	s := testStore(t)
+
+	if err := s.SetMeta("test_key", "test_value"); err != nil {
+		t.Fatalf("SetMeta: %v", err)
+	}
+
+	val, err := s.GetMeta("test_key")
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if val != "test_value" {
+		t.Errorf("expected 'test_value', got %q", val)
+	}
+
+	// Overwrite
+	if err := s.SetMeta("test_key", "new_value"); err != nil {
+		t.Fatalf("SetMeta overwrite: %v", err)
+	}
+
+	val, _ = s.GetMeta("test_key")
+	if val != "new_value" {
+		t.Errorf("expected 'new_value', got %q", val)
+	}
+
+	// Nonexistent key returns empty string
+	val, err = s.GetMeta("nonexistent")
+	if err != nil {
+		t.Fatalf("GetMeta nonexistent: %v", err)
+	}
+	if val != "" {
+		t.Errorf("expected empty string for nonexistent key, got %q", val)
+	}
+}
+
+func TestDefaultDecayRate(t *testing.T) {
+	tests := []struct {
+		nodeType NodeType
+		expected float64
+	}{
+		{TypeEpisode, 0.15},
+		{TypeConcept, 0.02},
+		{TypeProcedure, 0.005},
+		{TypeReflection, 0.05},
+		{NodeType("unknown"), 0.1},
+	}
+
+	for _, tt := range tests {
+		got := DefaultDecayRate(tt.nodeType)
+		if got != tt.expected {
+			t.Errorf("DefaultDecayRate(%s) = %f, want %f", tt.nodeType, got, tt.expected)
+		}
+	}
+}
+
+func TestOpenNonexistent(t *testing.T) {
+	_, err := Open(filepath.Join(t.TempDir(), "nope.sqlite"))
+	if err == nil {
+		t.Fatal("expected error opening nonexistent database")
+	}
+}
+
+func TestPathAndDB(t *testing.T) {
+	s := testStore(t)
+
+	if s.Path() == "" {
+		t.Error("expected non-empty path")
+	}
+	if s.DB() == nil {
+		t.Error("expected non-nil DB")
+	}
+}
+
+func TestAddEdge(t *testing.T) {
+	s := testStore(t)
+
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n1", Importance: 0.5})
+	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
+
+	edgeID, err := s.AddEdge(id1, id2, "relates_to")
+	if err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+	if edgeID == 0 {
+		t.Error("expected non-zero edge ID")
+	}
+
+	// Duplicate should not error (ON CONFLICT DO NOTHING)
+	_, err = s.AddEdge(id1, id2, "relates_to")
+	if err != nil {
+		t.Fatalf("AddEdge duplicate: %v", err)
+	}
+
+	// Different relation should create new edge
+	edgeID2, err := s.AddEdge(id1, id2, "supports")
+	if err != nil {
+		t.Fatalf("AddEdge different relation: %v", err)
+	}
+	if edgeID2 == 0 {
+		t.Error("expected non-zero edge ID for different relation")
+	}
+}
+
+func TestGetNodeWithEdges(t *testing.T) {
+	s := testStore(t)
+
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n1", Importance: 0.5})
+	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
+	id3, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n3", Importance: 0.5})
+
+	if _, err := s.AddEdge(id1, id2, "relates_to"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+	if _, err := s.AddEdge(id3, id1, "supports"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	nwe, err := s.GetNodeWithEdges(id1)
+	if err != nil {
+		t.Fatalf("GetNodeWithEdges: %v", err)
+	}
+	if nwe.Content != "n1" {
+		t.Errorf("expected content='n1', got %q", nwe.Content)
+	}
+	// id1 is source in one edge, target in another
+	if len(nwe.Edges) != 2 {
+		t.Errorf("expected 2 edges, got %d", len(nwe.Edges))
+	}
+}
+
+func TestReinforceNonexistentNode(t *testing.T) {
+	s := testStore(t)
+
+	err := s.ReinforceNode("nonexistent-id")
+	if err == nil {
+		t.Fatal("expected error reinforcing nonexistent node")
+	}
+}
+
+func TestSupersedeNonexistentNode(t *testing.T) {
+	s := testStore(t)
+
+	_, err := s.SupersedeNode("nonexistent-id", &AddNodeOpts{
+		Type:       TypeConcept,
+		Content:    "new",
+		Importance: 0.5,
+	})
+	if err == nil {
+		t.Fatal("expected error superseding nonexistent node")
+	}
+}
+
+func TestListNodesFilterByStatus(t *testing.T) {
+	s := testStore(t)
+
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "ep1", Importance: 0.5})
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "ep2", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	if err := s.MarkConsolidated([]string{id1}); err != nil {
+		t.Fatalf("MarkConsolidated: %v", err)
+	}
+
+	active, _ := s.ListNodes(ListNodesOpts{Status: "active"})
+	if len(active) != 1 {
+		t.Errorf("expected 1 active node, got %d", len(active))
+	}
+
+	consolidated, _ := s.ListNodes(ListNodesOpts{Status: "consolidated"})
+	if len(consolidated) != 1 {
+		t.Errorf("expected 1 consolidated node, got %d", len(consolidated))
+	}
+}
+
+func TestAddNodeDefaultImportance(t *testing.T) {
+	s := testStore(t)
+
+	id, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "test"})
+
+	node, _ := s.GetNode(id)
+	if node.Importance != 0.5 {
+		t.Errorf("expected default importance=0.5, got %f", node.Importance)
+	}
+}
+
+func TestAddNodeWithSubtypeAndMetadata(t *testing.T) {
+	s := testStore(t)
+
+	id, err := s.AddNode(&AddNodeOpts{
+		Type:       TypeEpisode,
+		Subtype:    "debug_session",
+		Content:    "test",
+		Metadata:   []byte(`{"key":"value"}`),
+		Importance: 0.6,
+	})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	node, _ := s.GetNode(id)
+	if node.Subtype != "debug_session" {
+		t.Errorf("expected subtype='debug_session', got %q", node.Subtype)
+	}
+	if string(node.Metadata) != `{"key":"value"}` {
+		t.Errorf("expected metadata={\"key\":\"value\"}, got %s", node.Metadata)
+	}
+}
+
+func TestStatsWithEdges(t *testing.T) {
+	s := testStore(t)
+
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n1", Importance: 0.5})
+	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
+	if _, err := s.AddEdge(id1, id2, "relates_to"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	stats, err := s.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if stats.TotalEdges != 1 {
+		t.Errorf("expected 1 edge, got %d", stats.TotalEdges)
+	}
+}
+
+func TestCloseNilDB(t *testing.T) {
+	s := &Store{}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close on nil db: %v", err)
 	}
 }
 

@@ -28,11 +28,11 @@ func openBrain() (*brain.Brain, error) {
 func outputJSON(v any) {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	enc.Encode(v)
+	_ = enc.Encode(v)
 }
 
 // outputNode formats a node for display.
-func outputNode(n store.Node) {
+func outputNode(n *store.Node) {
 	if formatFlag == "json" {
 		outputJSON(n)
 		return
@@ -42,7 +42,7 @@ func outputNode(n store.Node) {
 }
 
 // outputScoredNode formats a scored node for display.
-func outputScoredNode(n store.ScoredNode) {
+func outputScoredNode(n *store.ScoredNode) {
 	if formatFlag == "json" {
 		outputJSON(n)
 		return
@@ -62,8 +62,8 @@ func outputNodeList(nodes []store.Node) {
 		fmt.Println("No memories found.")
 		return
 	}
-	for _, n := range nodes {
-		outputNode(n)
+	for i := range nodes {
+		outputNode(&nodes[i])
 	}
 }
 
@@ -77,8 +77,8 @@ func outputScoredList(nodes []store.ScoredNode) {
 		fmt.Println("No relevant memories found.")
 		return
 	}
-	for _, n := range nodes {
-		outputScoredNode(n)
+	for i := range nodes {
+		outputScoredNode(&nodes[i])
 	}
 }
 

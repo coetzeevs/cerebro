@@ -7,9 +7,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// Set by goreleaser ldflags.
+var (
+	version = "dev"
+	commit  = "none"
+)
+
 var rootCmd = &cobra.Command{
-	Use:   "cerebro",
-	Short: "Persistent memory for AI agent orchestrators",
+	Use:     "cerebro",
+	Short:   "Persistent memory for AI agent orchestrators",
+	Version: version + " (" + commit + ")",
 	Long: `Cerebro is a local-first, zero-infrastructure persistent memory system
 for AI agent orchestrators. It combines a knowledge graph with vector
 similarity search in a single SQLite file.`,

@@ -9,7 +9,6 @@ import (
 
 var updateContentFlag string
 var updateImportanceFlag float64
-var updateImportanceSet bool
 
 func init() {
 	cmd := &cobra.Command{

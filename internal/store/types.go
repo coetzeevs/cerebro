@@ -76,15 +76,15 @@ type NodeWithEdges struct {
 
 // Stats contains brain health metrics.
 type Stats struct {
-	TotalNodes         int            `json:"total_nodes"`
-	ActiveNodes        int            `json:"active_nodes"`
-	ConsolidatedNodes  int            `json:"consolidated_nodes"`
-	SupersededNodes    int            `json:"superseded_nodes"`
-	ArchivedNodes      int            `json:"archived_nodes"`
-	NodesByType        map[string]int `json:"nodes_by_type"`
-	TotalEdges         int            `json:"total_edges"`
-	PendingEmbeddings  int            `json:"pending_embeddings"`
-	EmbeddingModel     string         `json:"embedding_model"`
-	EmbeddingDimensions string        `json:"embedding_dimensions"`
-	SchemaVersion      string         `json:"schema_version"`
+	TotalNodes          int            `json:"total_nodes"`
+	ActiveNodes         int            `json:"active_nodes"`
+	ConsolidatedNodes   int            `json:"consolidated_nodes"`
+	SupersededNodes     int            `json:"superseded_nodes"`
+	ArchivedNodes       int            `json:"archived_nodes"`
+	NodesByType         map[string]int `json:"nodes_by_type"`
+	TotalEdges          int            `json:"total_edges"`
+	PendingEmbeddings   int            `json:"pending_embeddings"`
+	EmbeddingModel      string         `json:"embedding_model"`
+	EmbeddingDimensions string         `json:"embedding_dimensions"`
+	SchemaVersion       string         `json:"schema_version"`
 }

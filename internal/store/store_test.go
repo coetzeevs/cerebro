@@ -498,9 +498,15 @@ func TestListNodesOrderByImportance(t *testing.T) {
 	s := testStore(t)
 
 	// Add nodes with different importance levels
-	s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "low", Importance: 0.2})
-	s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "high", Importance: 0.9})
-	s.AddNode(&AddNodeOpts{Type: TypeProcedure, Content: "mid", Importance: 0.5})
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "low", Importance: 0.2}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "high", Importance: 0.9}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if _, err := s.AddNode(&AddNodeOpts{Type: TypeProcedure, Content: "mid", Importance: 0.5}); err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
 
 	nodes, err := s.ListNodes(ListNodesOpts{
 		Status:  "active",

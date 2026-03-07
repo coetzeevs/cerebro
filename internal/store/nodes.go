@@ -189,10 +189,11 @@ func (s *Store) GetNodeWithEdges(id string) (*NodeWithEdges, error) {
 
 // ListNodesOpts configures node listing filters.
 type ListNodesOpts struct {
-	Type   NodeType
-	Status string
-	Since  *time.Time
-	Limit  int
+	Type    NodeType
+	Status  string
+	Since   *time.Time
+	Limit   int
+	OrderBy string // "importance", "created_at" (default: "created_at")
 }
 
 // ListNodes returns nodes matching the given filters.
@@ -215,7 +216,12 @@ func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
 		args = append(args, opts.Since.Format(time.RFC3339))
 	}
 
-	query += ` ORDER BY created_at DESC`
+	switch opts.OrderBy {
+	case "importance":
+		query += ` ORDER BY importance DESC`
+	default:
+		query += ` ORDER BY created_at DESC`
+	}
 
 	if opts.Limit > 0 {
 		query += fmt.Sprintf(` LIMIT %d`, opts.Limit)

@@ -494,6 +494,39 @@ func TestCloseNilDB(t *testing.T) {
 	}
 }
 
+func TestListNodesOrderByImportance(t *testing.T) {
+	s := testStore(t)
+
+	// Add nodes with different importance levels
+	s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "low", Importance: 0.2})
+	s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "high", Importance: 0.9})
+	s.AddNode(&AddNodeOpts{Type: TypeProcedure, Content: "mid", Importance: 0.5})
+
+	nodes, err := s.ListNodes(ListNodesOpts{
+		Status:  "active",
+		OrderBy: "importance",
+		Limit:   3,
+	})
+	if err != nil {
+		t.Fatalf("ListNodes: %v", err)
+	}
+
+	if len(nodes) != 3 {
+		t.Fatalf("expected 3 nodes, got %d", len(nodes))
+	}
+
+	// Should be ordered by importance DESC
+	if nodes[0].Content != "high" {
+		t.Errorf("expected first node to be 'high' (importance 0.9), got %q (%.1f)", nodes[0].Content, nodes[0].Importance)
+	}
+	if nodes[1].Content != "mid" {
+		t.Errorf("expected second node to be 'mid' (importance 0.5), got %q (%.1f)", nodes[1].Content, nodes[1].Importance)
+	}
+	if nodes[2].Content != "low" {
+		t.Errorf("expected third node to be 'low' (importance 0.2), got %q (%.1f)", nodes[2].Content, nodes[2].Importance)
+	}
+}
+
 // testStore creates a temporary store for testing.
 func testStore(t *testing.T) *Store {
 	t.Helper()

@@ -1,18 +1,18 @@
 package store
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"time"
+
+	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 )
 
 // StoreEmbedding inserts or replaces a vector embedding for a node.
 func (s *Store) StoreEmbedding(nodeID string, vec []float32) error {
-	// sqlite-vec expects the embedding as a JSON array
-	vecJSON, err := json.Marshal(vec)
+	serialized, err := sqlite_vec.SerializeFloat32(vec)
 	if err != nil {
-		return fmt.Errorf("marshaling vector: %w", err)
+		return fmt.Errorf("serializing vector: %w", err)
 	}
 
 	// Delete existing embedding for this node (upsert)
@@ -20,7 +20,7 @@ func (s *Store) StoreEmbedding(nodeID string, vec []float32) error {
 		return fmt.Errorf("deleting old embedding for %s: %w", nodeID, err)
 	}
 
-	_, err = s.db.Exec(`INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)`, nodeID, string(vecJSON))
+	_, err = s.db.Exec(`INSERT INTO vec_nodes (node_id, embedding) VALUES (?, ?)`, nodeID, serialized)
 	if err != nil {
 		return fmt.Errorf("storing embedding for %s: %w", nodeID, err)
 	}
@@ -34,13 +34,17 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		limit = 10
 	}
 
-	vecJSON, err := json.Marshal(vec)
+	serialized, err := sqlite_vec.SerializeFloat32(vec)
 	if err != nil {
-		return nil, fmt.Errorf("marshaling query vector: %w", err)
+		return nil, fmt.Errorf("serializing query vector: %w", err)
 	}
 
-	// sqlite-vec returns cosine distance (0 = identical, 2 = opposite)
-	// We convert to similarity: 1 - (distance / 2)
+	// sqlite-vec returns cosine distance (0 = identical, 2 = opposite).
+	// We convert to similarity: 1 - (distance / 2).
+	//
+	// vec0 virtual tables don't support JOINs inside the WHERE clause,
+	// so we fetch candidates from vec_nodes first, then JOIN with nodes
+	// to get full node data and filter by status.
 	rows, err := s.db.Query(`
 		SELECT
 			v.node_id,
@@ -48,13 +52,17 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			n.id, n.type, n.subtype, n.content, n.metadata, n.importance, n.decay_rate,
 			n.access_count, n.times_reinforced, n.status, n.embedding_model,
 			n.created_at, n.last_accessed, n.last_reinforced
-		FROM vec_nodes v
+		FROM (
+			SELECT node_id, distance
+			FROM vec_nodes
+			WHERE embedding MATCH ?
+			ORDER BY distance
+			LIMIT ?
+		) v
 		JOIN nodes n ON n.id = v.node_id
-		WHERE v.embedding MATCH ?
-			AND k = ?
-			AND n.status = 'active'
+		WHERE n.status = 'active'
 		ORDER BY v.distance ASC`,
-		string(vecJSON), limit*2, // fetch extra to filter by threshold
+		serialized, limit*3, // fetch extra to account for non-active filtered out
 	)
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
@@ -63,32 +71,30 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 
 	var results []ScoredNode
 	for rows.Next() {
-		var (
-			nodeID                       string
-			distance                     float64
-			subtype, metadata, lastReinf interface{}
-			n                            ScoredNode
-		)
+		var sn ScoredNode
+		var nodeID string
+		var distance float64
+		var subtype, metadata, lastReinf interface{}
 
 		err := rows.Scan(
 			&nodeID, &distance,
-			&n.ID, &n.Type, &subtype, &n.Content, &metadata, &n.Importance, &n.DecayRate,
-			&n.AccessCount, &n.TimesReinforced, &n.Status, &n.EmbeddingModel,
-			&n.CreatedAt, &n.LastAccessed, &lastReinf,
+			&sn.ID, &sn.Type, &subtype, &sn.Content, &metadata, &sn.Importance, &sn.DecayRate,
+			&sn.AccessCount, &sn.TimesReinforced, &sn.Status, &sn.EmbeddingModel,
+			&sn.CreatedAt, &sn.LastAccessed, &lastReinf,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
 		}
 
 		if s, ok := subtype.(string); ok {
-			n.Subtype = s
+			sn.Subtype = s
 		}
 		if m, ok := metadata.(string); ok {
-			n.Metadata = json.RawMessage(m)
+			sn.Metadata = []byte(m)
 		}
 		if lr, ok := lastReinf.(string); ok {
 			t, _ := time.Parse(time.RFC3339, lr)
-			n.LastReinforced = &t
+			sn.LastReinforced = &t
 		}
 
 		// Convert cosine distance to similarity
@@ -97,9 +103,9 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			continue
 		}
 
-		n.Similarity = similarity
-		n.Score = compositeScore(&n.Node, similarity)
-		results = append(results, n)
+		sn.Similarity = similarity
+		sn.Score = compositeScore(&sn.Node, similarity)
+		results = append(results, sn)
 
 		if len(results) >= limit {
 			break

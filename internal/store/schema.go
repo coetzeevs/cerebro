@@ -95,8 +95,7 @@ func (s *Store) InitVectorTable(dimensions int) error {
 	stmt := fmt.Sprintf(
 		`CREATE VIRTUAL TABLE IF NOT EXISTS vec_nodes USING vec0(
 			node_id TEXT,
-			embedding float[%d],
-			distance_metric = 'cosine'
+			embedding float[%d]
 		)`, dimensions)
 
 	if _, err := s.db.Exec(stmt); err != nil {

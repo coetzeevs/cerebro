@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 
 var recallLimitFlag int
 var recallPrimeFlag bool
+var recallGlobalFlag bool
 
 func init() {
 	cmd := &cobra.Command{
@@ -27,6 +29,7 @@ With --prime and a query, performs vector search with a low threshold.`,
 	}
 	cmd.Flags().IntVarP(&recallLimitFlag, "limit", "l", 20, "Maximum results")
 	cmd.Flags().BoolVar(&recallPrimeFlag, "prime", false, "Session-start mode: curated high-value selection")
+	cmd.Flags().BoolVar(&recallGlobalFlag, "global", false, "Query global store in addition to project store")
 	rootCmd.AddCommand(cmd)
 }
 
@@ -53,8 +56,17 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Query mode: vector search with composite scoring.
-	// Future: add graph expansion, procedural lookup, dual-store merge.
-	results, err := b.Search(context.Background(), query, recallLimitFlag, 0.3)
+	var results []store.ScoredNode
+	if recallGlobalFlag {
+		global, globalErr := brain.Open(brain.GlobalPath())
+		if globalErr != nil {
+			return fmt.Errorf("global store not initialized — run 'cerebro init --global' first: %w", globalErr)
+		}
+		defer func() { _ = global.Close() }()
+		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, 0.3, global)
+	} else {
+		results, err = b.Search(context.Background(), query, recallLimitFlag, 0.3)
+	}
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package brain
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -371,5 +372,220 @@ func TestNewEmbedder(t *testing.T) {
 		if e.Model() != tt.model {
 			t.Errorf("provider=%q: expected model=%q, got %q", tt.provider, tt.model, e.Model())
 		}
+	}
+}
+
+// --- Promote tests ---
+
+func TestPromote_BasicCopy(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	srcID, err := src.Add("Go prefers explicit error handling over exceptions", store.TypeConcept, WithImportance(0.8))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	globalID, err := src.Promote(context.Background(), srcID, dst)
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+	if globalID == "" {
+		t.Fatal("expected non-empty global ID")
+	}
+
+	gNode, err := dst.Get(globalID)
+	if err != nil {
+		t.Fatalf("Get from global: %v", err)
+	}
+	if gNode.Content != "Go prefers explicit error handling over exceptions" {
+		t.Errorf("content mismatch: %q", gNode.Content)
+	}
+	if gNode.Importance != 0.5 {
+		t.Errorf("expected importance=0.5, got %f", gNode.Importance)
+	}
+	if gNode.Type != store.TypeConcept {
+		t.Errorf("expected type=concept, got %s", gNode.Type)
+	}
+}
+
+func TestPromote_WithContentOverride(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	srcID, _ := src.Add("In the cerebro project, we use Go 1.24", store.TypeConcept)
+
+	globalID, err := src.Promote(context.Background(), srcID, dst,
+		WithPromoteContent("Memory systems benefit from project-scoped storage"))
+	if err != nil {
+		t.Fatalf("Promote with content: %v", err)
+	}
+
+	gNode, err := dst.Get(globalID)
+	if err != nil {
+		t.Fatalf("Get from global: %v", err)
+	}
+	if gNode.Content != "Memory systems benefit from project-scoped storage" {
+		t.Errorf("content not overridden: %q", gNode.Content)
+	}
+}
+
+func TestPromote_ProvenanceMetadata(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	srcID, _ := src.Add("test concept", store.TypeConcept)
+
+	globalID, err := src.Promote(context.Background(), srcID, dst)
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+
+	gNode, err := dst.Get(globalID)
+	if err != nil {
+		t.Fatalf("Get from global: %v", err)
+	}
+
+	var meta map[string]any
+	if err := json.Unmarshal(gNode.Metadata, &meta); err != nil {
+		t.Fatalf("unmarshal metadata: %v", err)
+	}
+	if meta["promoted_from_node"] != srcID {
+		t.Errorf("expected promoted_from_node=%q, got %v", srcID, meta["promoted_from_node"])
+	}
+	if _, ok := meta["promoted_at"]; !ok {
+		t.Error("expected promoted_at in metadata")
+	}
+}
+
+func TestPromote_SourceMetadataUpdated(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	srcID, _ := src.Add("test concept", store.TypeConcept)
+	globalID, err := src.Promote(context.Background(), srcID, dst)
+	if err != nil {
+		t.Fatalf("Promote: %v", err)
+	}
+
+	srcNode, err := src.Get(srcID)
+	if err != nil {
+		t.Fatalf("Get source node: %v", err)
+	}
+	var meta map[string]any
+	if err := json.Unmarshal(srcNode.Metadata, &meta); err != nil {
+		t.Fatalf("unmarshal source metadata: %v", err)
+	}
+	if meta["promoted_to_global"] != globalID {
+		t.Errorf("expected promoted_to_global=%q, got %v", globalID, meta["promoted_to_global"])
+	}
+}
+
+func TestPromote_NonexistentNode(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	_, err := src.Promote(context.Background(), "nonexistent-id", dst)
+	if err == nil {
+		t.Fatal("expected error promoting nonexistent node")
+	}
+}
+
+func TestPromote_PreservesType(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	for _, nodeType := range []store.NodeType{
+		store.TypeEpisode, store.TypeConcept, store.TypeProcedure, store.TypeReflection,
+	} {
+		srcID, _ := src.Add("content for "+string(nodeType), nodeType)
+		globalID, err := src.Promote(context.Background(), srcID, dst)
+		if err != nil {
+			t.Fatalf("Promote %s: %v", nodeType, err)
+		}
+		gNode, _ := dst.Get(globalID)
+		if gNode.Type != nodeType {
+			t.Errorf("type not preserved: expected %s, got %s", nodeType, gNode.Type)
+		}
+	}
+}
+
+// --- Merge / Global search tests ---
+
+func TestMergeSearchResults(t *testing.T) {
+	projectResults := []store.ScoredNode{
+		{Node: store.Node{ID: "proj-1"}, Score: 0.9},
+		{Node: store.Node{ID: "proj-2"}, Score: 0.7},
+	}
+	globalResults := []store.ScoredNode{
+		{Node: store.Node{ID: "glob-1"}, Score: 0.8},
+		{Node: store.Node{ID: "proj-1"}, Score: 0.85}, // duplicate — project wins
+	}
+
+	merged := mergeSearchResults(projectResults, globalResults, 10)
+
+	// proj-1 should appear exactly once (project version wins)
+	ids := make(map[string]int)
+	for _, r := range merged {
+		ids[r.ID]++
+	}
+	if ids["proj-1"] != 1 {
+		t.Errorf("proj-1 should appear exactly once, got %d", ids["proj-1"])
+	}
+
+	// Total unique: proj-1, proj-2, glob-1
+	if len(merged) != 3 {
+		t.Errorf("expected 3 merged results, got %d", len(merged))
+	}
+
+	// glob-1's score should be weighted by 0.7
+	for _, r := range merged {
+		if r.ID == "glob-1" {
+			expected := 0.8 * 0.7
+			diff := r.Score - expected
+			if diff < -1e-9 || diff > 1e-9 {
+				t.Errorf("glob-1 score: expected %.4f (0.8*0.7), got %.4f", expected, r.Score)
+			}
+		}
+	}
+
+	// Results should be sorted by score descending
+	for i := 1; i < len(merged); i++ {
+		if merged[i].Score > merged[i-1].Score {
+			t.Errorf("results not sorted: [%d]=%.3f > [%d]=%.3f",
+				i, merged[i].Score, i-1, merged[i-1].Score)
+		}
+	}
+}
+
+func TestMergeSearchResults_CapAtLimit(t *testing.T) {
+	var project []store.ScoredNode
+	for i := 0; i < 5; i++ {
+		project = append(project, store.ScoredNode{
+			Node:  store.Node{ID: fmt.Sprintf("p%d", i)},
+			Score: float64(5-i) / 5,
+		})
+	}
+	var global []store.ScoredNode
+	for i := 0; i < 5; i++ {
+		global = append(global, store.ScoredNode{
+			Node:  store.Node{ID: fmt.Sprintf("g%d", i)},
+			Score: float64(5-i) / 5,
+		})
+	}
+
+	merged := mergeSearchResults(project, global, 3)
+	if len(merged) != 3 {
+		t.Errorf("expected 3 results with limit=3, got %d", len(merged))
+	}
+}
+
+func TestSearchWithGlobal_NoEmbedder(t *testing.T) {
+	src := testBrain(t)
+	dst := testBrain(t)
+
+	_, err := src.SearchWithGlobal(context.Background(), "query", 10, 0.3, dst)
+	if err == nil {
+		t.Fatal("expected error without embedder")
 	}
 }

@@ -39,8 +39,9 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		return nil, fmt.Errorf("serializing query vector: %w", err)
 	}
 
-	// sqlite-vec returns cosine distance (0 = identical, 2 = opposite).
-	// We convert to similarity: 1 - (distance / 2).
+	// vec0 is configured with distance_metric=cosine, returning cosine distance
+	// (0 = identical, 1 = orthogonal, 2 = opposite).
+	// We convert to similarity: 1 - distance.
 	//
 	// vec0 virtual tables don't support JOINs inside the WHERE clause,
 	// so we fetch candidates from vec_nodes first, then JOIN with nodes
@@ -97,8 +98,9 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			sn.LastReinforced = &t
 		}
 
-		// Convert cosine distance to similarity
-		similarity := 1.0 - (distance / 2.0)
+		// Convert cosine distance to similarity.
+		// Cosine distance: 0 = identical, 1 = orthogonal, 2 = opposite.
+		similarity := 1.0 - distance
 		if similarity < threshold {
 			continue
 		}

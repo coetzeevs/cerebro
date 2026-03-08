@@ -208,6 +208,58 @@ func TestStoreEmbeddingUpsert(t *testing.T) {
 	}
 }
 
+func TestVectorSearchCosineDistance(t *testing.T) {
+	s := testStoreWithVec(t, 4)
+
+	// Add two nodes: one similar to query, one orthogonal
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "similar", Importance: 0.5})
+	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "orthogonal", Importance: 0.5})
+
+	// Normalized vectors (unit length) for clean cosine similarity
+	if err := s.StoreEmbedding(id1, []float32{1.0, 0.0, 0.0, 0.0}); err != nil {
+		t.Fatalf("StoreEmbedding: %v", err)
+	}
+	if err := s.StoreEmbedding(id2, []float32{0.0, 1.0, 0.0, 0.0}); err != nil {
+		t.Fatalf("StoreEmbedding: %v", err)
+	}
+
+	// Search for exact match — similarity should be ~1.0
+	results, err := s.VectorSearch([]float32{1.0, 0.0, 0.0, 0.0}, 10, 0.0)
+	if err != nil {
+		t.Fatalf("VectorSearch: %v", err)
+	}
+
+	if len(results) < 1 {
+		t.Fatal("expected at least 1 result")
+	}
+
+	// Exact match should have similarity very close to 1.0
+	if results[0].Similarity < 0.95 {
+		t.Errorf("expected similarity ~1.0 for exact match, got %f", results[0].Similarity)
+	}
+
+	// Orthogonal vector should have similarity ~0.0
+	if len(results) >= 2 && results[1].Similarity > 0.1 {
+		t.Errorf("expected similarity ~0.0 for orthogonal vector, got %f", results[1].Similarity)
+	}
+
+	// All similarities should be in [0, 1] range (cosine property)
+	for i, r := range results {
+		if r.Similarity < -0.01 || r.Similarity > 1.01 {
+			t.Errorf("result[%d] similarity %f outside [0, 1] range", i, r.Similarity)
+		}
+	}
+
+	// Threshold should correctly filter: 0.5 should exclude orthogonal
+	filtered, err := s.VectorSearch([]float32{1.0, 0.0, 0.0, 0.0}, 10, 0.5)
+	if err != nil {
+		t.Fatalf("VectorSearch filtered: %v", err)
+	}
+	if len(filtered) != 1 {
+		t.Errorf("expected 1 result above 0.5 threshold, got %d", len(filtered))
+	}
+}
+
 func TestCompositeScore(t *testing.T) {
 	now := func() *Node {
 		return &Node{

@@ -54,22 +54,22 @@ func Init(path string, cfg EmbedConfig) (*Brain, error) {
 
 	// Set meta for embedding config
 	if err := s.SetMeta("embedding_provider", cfg.Provider); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("setting embedding_provider: %w", err)
 	}
 	if err := s.SetMeta("embedding_model", embedder.Model()); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("setting embedding_model: %w", err)
 	}
 	if err := s.SetMeta("embedding_dimensions", strconv.Itoa(embedder.Dimensions())); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("setting embedding_dimensions: %w", err)
 	}
 
 	// Create vector table if embedding is enabled
 	if embedder.Dimensions() > 0 {
 		if err := s.InitVectorTable(embedder.Dimensions()); err != nil {
-			s.Close()
+			_ = s.Close()
 			return nil, fmt.Errorf("initializing vector table: %w", err)
 		}
 	}
@@ -259,7 +259,12 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
-	return b.store.VectorSearch(vec, limit, threshold)
+	results, err := b.store.VectorSearch(vec, limit, threshold)
+	if err != nil {
+		return nil, err
+	}
+
+	return b.store.ExpandGraph(results, limit)
 }
 
 // embedAndStore generates an embedding and stores it in vec_nodes.

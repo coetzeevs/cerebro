@@ -35,7 +35,7 @@ func Open(path string) (*Store, error) {
 // If the database already exists, it validates the schema version.
 func Init(path string) (*Store, error) {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // project data dir
 		return nil, fmt.Errorf("creating directory %s: %w", dir, err)
 	}
 
@@ -45,7 +45,7 @@ func Init(path string) (*Store, error) {
 	}
 
 	if err := s.applySchema(); err != nil {
-		s.Close()
+		_ = s.Close()
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
 
@@ -61,7 +61,7 @@ func open(path string) (*Store, error) {
 
 	// Verify connection
 	if err := db.Ping(); err != nil {
-		db.Close()
+		_ = db.Close()
 		return nil, fmt.Errorf("connecting to database: %w", err)
 	}
 

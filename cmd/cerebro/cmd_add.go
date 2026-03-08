@@ -38,7 +38,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	var opts []brain.AddOption
 	opts = append(opts, brain.WithImportance(addImportanceFlag))

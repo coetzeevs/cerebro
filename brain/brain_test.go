@@ -16,7 +16,7 @@ func testBrain(t *testing.T) *Brain {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	t.Cleanup(func() { b.Close() })
+	t.Cleanup(func() { _ = b.Close() })
 	return b
 }
 
@@ -26,7 +26,7 @@ func TestInit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	// Verify meta was set
 	provider, err := b.store.GetMeta("embedding_provider")
@@ -54,7 +54,7 @@ func TestInitCreatesDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	b.Close()
+	_ = b.Close()
 }
 
 func TestOpenExisting(t *testing.T) {
@@ -63,13 +63,13 @@ func TestOpenExisting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	b.Close()
+	_ = b.Close()
 
 	b2, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	defer b2.Close()
+	defer func() { _ = b2.Close() }()
 
 	// Should have loaded embedding config from meta
 	if b2.embedder.Model() != "none" {

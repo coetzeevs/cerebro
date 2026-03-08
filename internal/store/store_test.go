@@ -30,14 +30,14 @@ func TestInitAndOpen(t *testing.T) {
 		t.Fatalf("expected schema_version=1, got %q", ver)
 	}
 
-	s.Close()
+	_ = s.Close()
 
 	// Open existing database
 	s2, err := Open(path)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	s2.Close()
+	_ = s2.Close()
 }
 
 func TestAddAndGetNode(t *testing.T) {
@@ -533,6 +533,71 @@ func TestListNodesOrderByImportance(t *testing.T) {
 	}
 }
 
+func TestGetNodesByIDs(t *testing.T) {
+	s := testStore(t)
+
+	id1, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "concept one", Importance: 0.8})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	id2, err := s.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "episode one", Importance: 0.5})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	id3, err := s.AddNode(&AddNodeOpts{Type: TypeProcedure, Content: "procedure one", Importance: 0.7})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	// Fetch a subset
+	nodes, err := s.GetNodesByIDs([]string{id1, id3})
+	if err != nil {
+		t.Fatalf("GetNodesByIDs: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("expected 2 nodes, got %d", len(nodes))
+	}
+
+	// Verify we got the right nodes (order not guaranteed)
+	ids := map[string]bool{nodes[0].ID: true, nodes[1].ID: true}
+	if !ids[id1] || !ids[id3] {
+		t.Errorf("expected ids %s and %s, got %v", id1[:8], id3[:8], ids)
+	}
+
+	// Should not return consolidated nodes
+	if err := s.MarkConsolidated([]string{id2}); err != nil {
+		// id2 is episode, so this works
+		t.Fatalf("MarkConsolidated: %v", err)
+	}
+	// Actually id2 is an episode and gets consolidated. But GetNodesByIDs
+	// should only return active nodes.
+	nodes2, err := s.GetNodesByIDs([]string{id1, id2, id3})
+	if err != nil {
+		t.Fatalf("GetNodesByIDs with consolidated: %v", err)
+	}
+	if len(nodes2) != 2 {
+		t.Errorf("expected 2 active nodes (id2 consolidated), got %d", len(nodes2))
+	}
+
+	// Empty input should return empty
+	empty, err := s.GetNodesByIDs([]string{})
+	if err != nil {
+		t.Fatalf("GetNodesByIDs empty: %v", err)
+	}
+	if len(empty) != 0 {
+		t.Errorf("expected 0 nodes for empty input, got %d", len(empty))
+	}
+
+	// Nonexistent IDs should return nothing
+	none, err := s.GetNodesByIDs([]string{"nonexistent-id"})
+	if err != nil {
+		t.Fatalf("GetNodesByIDs nonexistent: %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("expected 0 nodes for nonexistent ID, got %d", len(none))
+	}
+}
+
 // testStore creates a temporary store for testing.
 func testStore(t *testing.T) *Store {
 	t.Helper()
@@ -541,6 +606,6 @@ func testStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }

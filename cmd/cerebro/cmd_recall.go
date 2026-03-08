@@ -41,7 +41,7 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	// Prime mode without query: type-stratified retrieval for balanced session briefing.
 	// Budget: 40% concepts, 30% procedures, 20% episodes, 10% reflections.

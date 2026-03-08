@@ -26,7 +26,7 @@ func runList(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	opts := store.ListNodesOpts{
 		Status: listStatusFlag,

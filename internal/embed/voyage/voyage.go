@@ -53,7 +53,7 @@ type embeddingResponse struct {
 
 func (p *Provider) Embed(ctx context.Context, text string) ([]float32, error) {
 	if p.apiKey == "" {
-		return nil, fmt.Errorf("Voyage API key not set (CEREBRO_VOYAGE_API_KEY)")
+		return nil, fmt.Errorf("voyage API key not set (CEREBRO_VOYAGE_API_KEY)")
 	}
 
 	payload, err := json.Marshal(embeddingRequest{
@@ -75,11 +75,11 @@ func (p *Provider) Embed(ctx context.Context, text string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("calling Voyage API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck // best-effort close of response body
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Voyage API returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("voyage API returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result embeddingResponse
@@ -88,7 +88,7 @@ func (p *Provider) Embed(ctx context.Context, text string) ([]float32, error) {
 	}
 
 	if len(result.Data) == 0 {
-		return nil, fmt.Errorf("Voyage API returned no embeddings")
+		return nil, fmt.Errorf("voyage API returned no embeddings")
 	}
 
 	vec := make([]float32, len(result.Data[0].Embedding))

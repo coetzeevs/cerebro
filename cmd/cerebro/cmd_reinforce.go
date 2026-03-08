@@ -16,7 +16,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			defer b.Close()
+			defer func() { _ = b.Close() }()
 
 			if err := b.Reinforce(args[0]); err != nil {
 				return err

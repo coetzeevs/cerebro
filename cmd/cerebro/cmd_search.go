@@ -29,7 +29,7 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	results, err := b.Search(context.Background(), query, searchLimitFlag, searchThresholdFlag)
 	if err != nil {

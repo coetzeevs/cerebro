@@ -13,7 +13,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			defer b.Close()
+			defer func() { _ = b.Close() }()
 
 			stats, err := b.Stats()
 			if err != nil {

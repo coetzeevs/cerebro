@@ -18,6 +18,24 @@
             "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true"
           }
         ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
+          }
+        ]
       }
     ],
     "PreCompact": [

@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"strings"
+	"time"
 
+	"github.com/coetzeevs/cerebro/brain"
 	"github.com/coetzeevs/cerebro/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -41,17 +43,11 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	}
 	defer b.Close()
 
-	// Prime mode without query: return top active memories by importance.
-	// This requires no embeddings and works as a reliable session-start briefing.
+	// Prime mode without query: type-stratified retrieval for balanced session briefing.
+	// Budget: 40% concepts, 30% procedures, 20% episodes, 10% reflections.
+	// No embeddings needed — works as a reliable session-start briefing.
 	if recallPrimeFlag && query == "" {
-		nodes, err := b.List(store.ListNodesOpts{
-			Status:  "active",
-			OrderBy: "importance",
-			Limit:   recallLimitFlag,
-		})
-		if err != nil {
-			return err
-		}
+		nodes := primeStratified(b, recallLimitFlag)
 		outputNodeList(nodes)
 		return nil
 	}
@@ -65,4 +61,55 @@ func runRecall(cmd *cobra.Command, args []string) error {
 
 	outputScoredList(results)
 	return nil
+}
+
+// primeStratified returns a type-balanced selection of memories for session priming.
+// Budget: 40% concepts, 30% procedures, 20% episodes (recent), 10% reflections.
+func primeStratified(b *brain.Brain, limit int) []store.Node {
+	type stratum struct {
+		nodeType store.NodeType
+		fraction float64
+		orderBy  string
+		since    *time.Time // optional: only fetch recent
+	}
+
+	sevenDaysAgo := time.Now().Add(-7 * 24 * time.Hour)
+	strata := []stratum{
+		{store.TypeConcept, 0.40, "importance", nil},
+		{store.TypeProcedure, 0.30, "importance", nil},
+		{store.TypeEpisode, 0.20, "created_at", &sevenDaysAgo},
+		{store.TypeReflection, 0.10, "importance", nil},
+	}
+
+	seen := make(map[string]bool)
+	var result []store.Node
+
+	for _, s := range strata {
+		budget := int(float64(limit)*s.fraction + 0.5)
+		if budget < 1 {
+			budget = 1
+		}
+		nodes, err := b.List(store.ListNodesOpts{
+			Type:    s.nodeType,
+			Status:  "active",
+			OrderBy: s.orderBy,
+			Limit:   budget,
+			Since:   s.since,
+		})
+		if err != nil {
+			continue
+		}
+		for _, n := range nodes {
+			if !seen[n.ID] {
+				seen[n.ID] = true
+				result = append(result, n)
+			}
+		}
+	}
+
+	// Cap at limit
+	if len(result) > limit {
+		result = result[:limit]
+	}
+	return result
 }

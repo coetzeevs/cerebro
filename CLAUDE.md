@@ -6,16 +6,6 @@ Local-first persistent memory system for AI agents. SQLite-backed with vector se
 
 This project is its own first use case. The test of cerebro's efficacy is whether the agent (Claude Code) has recall of this project's architecture, decisions, and the process used to build it — across sessions, through context compactions, without losing continuity. If cerebro works, you should know why we chose Model B over Model C, what ADR-006 decided, and how the store layer is structured without re-reading everything from scratch.
 
-## Work Tracking
-
-Until cerebro is live and can persist its own memory, we track project state in Claude Code's auto-memory files. At the start of every session, read these to restore context:
-
-- `MEMORY.md` — Current state, key decisions, user preferences (auto-loaded)
-- `work-remaining.md` — Detailed remaining work, ordered by critical path to dogfooding
-- `decisions-log.md` — Chronological record of what was decided and why
-
-These live in Claude Code's project memory directory. Update them at the end of each session or when significant decisions are made. Once cerebro is operational, these files become the seed data for the first brain.
-
 ## Development
 
 ```bash

@@ -242,6 +242,12 @@ func (b *Brain) Stats() (*store.Stats, error) {
 	return b.store.GetStats()
 }
 
+// GC evicts decayed memories to the archive. If dryRun is true,
+// it reports what would be archived without modifying data.
+func (b *Brain) GC(threshold float64, dryRun bool) (*store.GCResult, error) {
+	return b.store.GC(threshold, dryRun)
+}
+
 // Search performs vector similarity search and returns scored results.
 func (b *Brain) Search(ctx context.Context, query string, limit int, threshold float64) ([]store.ScoredNode, error) {
 	if b.embedder.Dimensions() == 0 {

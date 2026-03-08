@@ -31,3 +31,4 @@ vendor/
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+.cerebro-gc.log

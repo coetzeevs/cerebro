@@ -79,7 +79,7 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("preparing archive statement: %w", err)
 	}
-	defer archiveStmt.Close() //nolint:errcheck
+	defer archiveStmt.Close() //nolint:errcheck // best-effort cleanup
 
 	deleteVecStmt, err := tx.Prepare(`DELETE FROM vec_nodes WHERE node_id = ?`)
 	if err != nil {
@@ -87,14 +87,14 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 		deleteVecStmt = nil
 	}
 	if deleteVecStmt != nil {
-		defer deleteVecStmt.Close() //nolint:errcheck
+		defer deleteVecStmt.Close() //nolint:errcheck // best-effort cleanup
 	}
 
 	deleteNodeStmt, err := tx.Prepare(`DELETE FROM nodes WHERE id = ?`)
 	if err != nil {
 		return nil, fmt.Errorf("preparing delete statement: %w", err)
 	}
-	defer deleteNodeStmt.Close() //nolint:errcheck
+	defer deleteNodeStmt.Close() //nolint:errcheck // best-effort cleanup
 
 	for i := range candidates {
 		n := candidates[i].node

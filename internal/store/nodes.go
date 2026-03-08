@@ -153,7 +153,7 @@ func (s *Store) MarkConsolidated(ids []string) error {
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer stmt.Close() //nolint:errcheck
+	defer stmt.Close() //nolint:errcheck // best-effort cleanup
 
 	for _, id := range ids {
 		if _, err := stmt.Exec(id); err != nil {
@@ -231,7 +231,7 @@ func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing nodes: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
 
 	var nodes []Node
 	for rows.Next() {
@@ -255,7 +255,7 @@ func (s *Store) GetStats() (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("counting nodes by status: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
 	for rows.Next() {
 		var status string
 		var count int
@@ -280,7 +280,7 @@ func (s *Store) GetStats() (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("counting nodes by type: %w", err)
 	}
-	defer rows2.Close() //nolint:errcheck
+	defer rows2.Close() //nolint:errcheck // best-effort cleanup
 	for rows2.Next() {
 		var t string
 		var count int

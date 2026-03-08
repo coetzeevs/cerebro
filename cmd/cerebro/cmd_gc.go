@@ -83,7 +83,7 @@ func writeEvictionLog(logPath string, result *store.GCResult) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close() //nolint:errcheck
+	defer f.Close() //nolint:errcheck // best-effort close of output file
 
 	entry := struct {
 		Timestamp string                `json:"timestamp"`

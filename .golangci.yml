@@ -14,21 +14,20 @@ linters:
     - misspell
     - gocritic
     - gosec
+  settings:
+    errcheck:
+      check-type-assertions: true
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - style
+        - performance
+    gosec:
+      excludes:
+        - G301
+        - G304
   exclusions:
     rules:
       - linters:
           - gosec
         text: "G201|G202"
-
-linters-settings:
-  errcheck:
-    check-type-assertions: true
-  gocritic:
-    enabled-tags:
-      - diagnostic
-      - style
-      - performance
-  gosec:
-    excludes:
-      - G301
-      - G304

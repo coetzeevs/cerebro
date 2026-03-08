@@ -31,7 +31,7 @@ func (s *Store) getEdgesForNode(nodeID string) ([]Edge, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying edges: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
 
 	var edges []Edge
 	for rows.Next() {
@@ -76,7 +76,7 @@ func (s *Store) GetEdgesBatch(nodeIDs []string) (map[string][]Edge, error) {
 	if err != nil {
 		return nil, fmt.Errorf("batch get edges: %w", err)
 	}
-	defer rows.Close() //nolint:errcheck
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
 
 	// Build a set for fast lookup
 	idSet := make(map[string]bool, len(nodeIDs))

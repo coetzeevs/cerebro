@@ -32,3 +32,4 @@ vendor/
 *.sqlite-wal
 *.sqlite-shm
 .cerebro-gc.log
+.claude/settings.local.json

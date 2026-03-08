@@ -31,7 +31,7 @@ func (s *Store) getEdgesForNode(nodeID string) ([]Edge, error) {
 	if err != nil {
 		return nil, fmt.Errorf("querying edges: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var edges []Edge
 	for rows.Next() {
@@ -42,6 +42,62 @@ func (s *Store) getEdgesForNode(nodeID string) ([]Edge, error) {
 		edges = append(edges, *e)
 	}
 	return edges, rows.Err()
+}
+
+// GetEdgesBatch returns edges for multiple nodes in a single query.
+// The result maps each input node ID to its edges (where it appears as source or target).
+func (s *Store) GetEdgesBatch(nodeIDs []string) (map[string][]Edge, error) {
+	result := make(map[string][]Edge)
+	if len(nodeIDs) == 0 {
+		return result, nil
+	}
+
+	// Build IN clause
+	placeholders := make([]byte, 0, len(nodeIDs)*2)
+	// We need the IDs twice (source and target)
+	args := make([]any, 0, len(nodeIDs)*2)
+	for i, id := range nodeIDs {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args = append(args, id)
+	}
+	// Duplicate args for the second IN clause
+	for _, id := range nodeIDs {
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf(`SELECT id, source_id, target_id, relation, weight, metadata, created_at
+		FROM edges WHERE source_id IN (%s) OR target_id IN (%s)
+		ORDER BY created_at`, placeholders, placeholders) //nolint:gosec  // G201: placeholders are ? not user input
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch get edges: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	// Build a set for fast lookup
+	idSet := make(map[string]bool, len(nodeIDs))
+	for _, id := range nodeIDs {
+		idSet[id] = true
+	}
+
+	for rows.Next() {
+		e, err := scanEdge(rows)
+		if err != nil {
+			return nil, err
+		}
+		// Map edge to each input node it connects to
+		if idSet[e.SourceID] {
+			result[e.SourceID] = append(result[e.SourceID], *e)
+		}
+		if idSet[e.TargetID] && e.SourceID != e.TargetID {
+			result[e.TargetID] = append(result[e.TargetID], *e)
+		}
+	}
+	return result, rows.Err()
 }
 
 func scanEdge(rows *sql.Rows) (*Edge, error) {

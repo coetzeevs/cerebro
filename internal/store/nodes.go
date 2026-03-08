@@ -153,7 +153,7 @@ func (s *Store) MarkConsolidated(ids []string) error {
 	if err != nil {
 		return fmt.Errorf("preparing statement: %w", err)
 	}
-	defer stmt.Close()
+	defer stmt.Close() //nolint:errcheck
 
 	for _, id := range ids {
 		if _, err := stmt.Exec(id); err != nil {
@@ -224,14 +224,14 @@ func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
 	}
 
 	if opts.Limit > 0 {
-		query += fmt.Sprintf(` LIMIT %d`, opts.Limit)
+		query += fmt.Sprintf(` LIMIT %d`, opts.Limit) //nolint:gosec // limit is an int, not user input
 	}
 
 	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("listing nodes: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var nodes []Node
 	for rows.Next() {
@@ -255,7 +255,7 @@ func (s *Store) GetStats() (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("counting nodes by status: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
 		var status string
 		var count int
@@ -280,7 +280,7 @@ func (s *Store) GetStats() (*Stats, error) {
 	if err != nil {
 		return nil, fmt.Errorf("counting nodes by type: %w", err)
 	}
-	defer rows2.Close()
+	defer rows2.Close() //nolint:errcheck
 	for rows2.Next() {
 		var t string
 		var count int
@@ -306,6 +306,44 @@ func (s *Store) GetStats() (*Stats, error) {
 	stats.SchemaVersion, _ = s.GetMeta("schema_version")
 
 	return stats, nil
+}
+
+// GetNodesByIDs retrieves multiple active nodes by their IDs in a single query.
+func (s *Store) GetNodesByIDs(ids []string) ([]Node, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	// Build IN clause with placeholders
+	placeholders := make([]byte, 0, len(ids)*2)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`SELECT id, type, subtype, content, metadata, importance, decay_rate,
+		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced
+		FROM nodes WHERE id IN (%s) AND status = 'active'`, placeholders) //nolint:gosec // placeholders are ? not user input
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch get nodes: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // rows.Close in defer is idiomatic
+
+	var nodes []Node
+	for rows.Next() {
+		n, err := scanNodeFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		nodes = append(nodes, *n)
+	}
+	return nodes, rows.Err()
 }
 
 // helpers

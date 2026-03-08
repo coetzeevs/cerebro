@@ -3,6 +3,7 @@ package store
 import (
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	sqlite_vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
@@ -68,7 +69,7 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 	if err != nil {
 		return nil, fmt.Errorf("vector search: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck // rows.Close in defer is idiomatic
 
 	var results []ScoredNode
 	for rows.Next() {
@@ -106,7 +107,7 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		}
 
 		sn.Similarity = similarity
-		sn.Score = compositeScore(&sn.Node, similarity)
+		sn.Score = compositeScore(&sn.Node, similarity, 0)
 		results = append(results, sn)
 
 		if len(results) >= limit {
@@ -119,8 +120,8 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 
 // compositeScore computes the four-signal retrieval score.
 // Weights: relevance=0.35, importance=0.25, recency=0.25, structural=0.15
-// Structural bonus is computed separately during graph expansion.
-func compositeScore(n *Node, similarity float64) float64 {
+// The structural parameter should be 0-1 (scaled by edge weight).
+func compositeScore(n *Node, similarity, structural float64) float64 {
 	relevance := similarity
 
 	// Importance with access reinforcement
@@ -130,6 +131,93 @@ func compositeScore(n *Node, similarity float64) float64 {
 	hoursSinceAccess := time.Since(n.LastAccessed).Hours()
 	recency := math.Exp(-n.DecayRate * hoursSinceAccess)
 
-	return 0.35*relevance + 0.25*importance + 0.25*recency
-	// Structural (0.15) is added during graph expansion in recall
+	return 0.35*relevance + 0.25*importance + 0.25*recency + 0.15*structural
+}
+
+// ExpandGraph performs 1-hop graph expansion on search results.
+// For each result node, it follows edges to discover connected nodes.
+// Connected nodes not already in results are scored and merged in.
+// Result nodes connected to other results get a structural bonus.
+func (s *Store) ExpandGraph(results []ScoredNode, limit int) ([]ScoredNode, error) {
+	if len(results) == 0 {
+		return results, nil
+	}
+
+	// Build a set and map of result node IDs
+	resultIDs := make([]string, len(results))
+	resultSet := make(map[string]bool, len(results))
+	resultIdx := make(map[string]int, len(results))
+	for i := range results {
+		resultIDs[i] = results[i].ID
+		resultSet[results[i].ID] = true
+		resultIdx[results[i].ID] = i
+	}
+
+	// Batch-fetch edges for all result nodes
+	edgeMap, err := s.GetEdgesBatch(resultIDs)
+	if err != nil {
+		return nil, fmt.Errorf("expanding graph: %w", err)
+	}
+
+	// Identify neighbors and compute structural bonuses
+	neighborIDs := make(map[string]float64) // neighbor ID → max edge weight
+	for i := range results {
+		edges := edgeMap[results[i].ID]
+		for j := range edges {
+			// Find the other end of the edge
+			otherID := edges[j].TargetID
+			if otherID == results[i].ID {
+				otherID = edges[j].SourceID
+			}
+
+			weight := edges[j].Weight
+			if weight <= 0 {
+				weight = 1.0
+			}
+
+			if resultSet[otherID] {
+				// Both ends in results — boost both with structural bonus
+				results[i].Score = compositeScore(&results[i].Node, results[i].Similarity, weight)
+			} else {
+				// Other end is a neighbor — track max weight
+				if w, exists := neighborIDs[otherID]; !exists || weight > w {
+					neighborIDs[otherID] = weight
+				}
+			}
+		}
+	}
+
+	// Fetch neighbor nodes (active only)
+	if len(neighborIDs) > 0 {
+		ids := make([]string, 0, len(neighborIDs))
+		for id := range neighborIDs {
+			ids = append(ids, id)
+		}
+
+		neighbors, err := s.GetNodesByIDs(ids)
+		if err != nil {
+			return nil, fmt.Errorf("fetching neighbors: %w", err)
+		}
+
+		for i := range neighbors {
+			weight := neighborIDs[neighbors[i].ID]
+			score := compositeScore(&neighbors[i], 0, weight) // similarity=0
+			results = append(results, ScoredNode{
+				Node:  neighbors[i],
+				Score: score,
+			})
+		}
+	}
+
+	// Sort by score descending
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	// Cap at limit
+	if len(results) > limit {
+		results = results[:limit]
+	}
+
+	return results, nil
 }

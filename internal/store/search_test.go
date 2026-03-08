@@ -16,7 +16,7 @@ func testStoreWithVec(t *testing.T, dims int) *Store {
 	if err := s.InitVectorTable(dims); err != nil {
 		t.Fatalf("InitVectorTable: %v", err)
 	}
-	t.Cleanup(func() { s.Close() })
+	t.Cleanup(func() { _ = s.Close() })
 	return s
 }
 
@@ -26,7 +26,7 @@ func TestInitVectorTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	if err := s.InitVectorTable(4); err != nil {
 		t.Fatalf("InitVectorTable: %v", err)
@@ -269,16 +269,16 @@ func TestCompositeScore(t *testing.T) {
 		}
 	}
 
-	// Basic score with fresh node
+	// Basic score with fresh node, no structural bonus
 	n := now()
-	score := compositeScore(n, 0.9)
+	score := compositeScore(n, 0.9, 0)
 	if score <= 0 {
 		t.Errorf("expected positive score, got %f", score)
 	}
 
 	// Higher similarity should give higher score
-	scoreLow := compositeScore(n, 0.3)
-	scoreHigh := compositeScore(n, 0.9)
+	scoreLow := compositeScore(n, 0.3, 0)
+	scoreHigh := compositeScore(n, 0.9, 0)
 	if scoreHigh <= scoreLow {
 		t.Errorf("higher similarity should give higher score: %.4f <= %.4f", scoreHigh, scoreLow)
 	}
@@ -286,14 +286,177 @@ func TestCompositeScore(t *testing.T) {
 	// More access should increase score (via importance reinforcement)
 	n2 := now()
 	n2.AccessCount = 10
-	scoreReinforced := compositeScore(n2, 0.9)
-	scoreBase := compositeScore(now(), 0.9)
+	scoreReinforced := compositeScore(n2, 0.9, 0)
+	scoreBase := compositeScore(now(), 0.9, 0)
 	if scoreReinforced <= scoreBase {
 		t.Errorf("reinforced node should score higher: %.4f <= %.4f", scoreReinforced, scoreBase)
+	}
+
+	// Structural bonus should increase score
+	scoreNoStruct := compositeScore(n, 0.9, 0)
+	scoreWithStruct := compositeScore(n, 0.9, 1.0)
+	if scoreWithStruct <= scoreNoStruct {
+		t.Errorf("structural bonus should increase score: %.4f <= %.4f", scoreWithStruct, scoreNoStruct)
+	}
+	// The structural contribution should be exactly 0.15
+	diff := scoreWithStruct - scoreNoStruct
+	if math.Abs(diff-0.15) > 0.001 {
+		t.Errorf("structural bonus should add 0.15, actual diff: %.4f", diff)
 	}
 
 	// Score should be bounded reasonable (not NaN, not Inf)
 	if math.IsNaN(score) || math.IsInf(score, 0) {
 		t.Errorf("score should be finite, got %f", score)
+	}
+}
+
+func TestExpandGraphFindsNeighbors(t *testing.T) {
+	s := testStoreWithVec(t, 4)
+
+	// Create nodes A (in results) and B (neighbor via edge)
+	idA, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "concept A", Importance: 0.8})
+	if err != nil {
+		t.Fatalf("AddNode A: %v", err)
+	}
+	idB, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "concept B", Importance: 0.7})
+	if err != nil {
+		t.Fatalf("AddNode B: %v", err)
+	}
+
+	// A→B edge
+	if _, err := s.AddEdge(idA, idB, "relates_to"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	// Simulate vector search returning only A
+	initial := []ScoredNode{
+		{Node: Node{ID: idA, Type: TypeConcept, Content: "concept A", Importance: 0.8, DecayRate: 0.02}, Score: 0.6, Similarity: 0.9},
+	}
+
+	expanded, err := s.ExpandGraph(initial, 10)
+	if err != nil {
+		t.Fatalf("ExpandGraph: %v", err)
+	}
+
+	// Should now include B as a neighbor
+	if len(expanded) != 2 {
+		t.Fatalf("expected 2 results after expansion, got %d", len(expanded))
+	}
+
+	// Find B in results
+	var foundB bool
+	for i := range expanded {
+		if expanded[i].ID == idB {
+			foundB = true
+			// B should have no similarity (not from vector search)
+			if expanded[i].Similarity != 0 {
+				t.Errorf("expected similarity=0 for neighbor, got %f", expanded[i].Similarity)
+			}
+		}
+	}
+	if !foundB {
+		t.Error("expected neighbor B in expanded results")
+	}
+}
+
+func TestExpandGraphBoostsConnected(t *testing.T) {
+	s := testStoreWithVec(t, 4)
+
+	// A and B both in initial results, connected by edge
+	idA, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "concept A", Importance: 0.8})
+	if err != nil {
+		t.Fatalf("AddNode A: %v", err)
+	}
+	idB, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "concept B", Importance: 0.7})
+	if err != nil {
+		t.Fatalf("AddNode B: %v", err)
+	}
+
+	if _, err := s.AddEdge(idA, idB, "relates_to"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	nodeA, _ := s.GetNode(idA)
+	nodeB, _ := s.GetNode(idB)
+
+	scoreA := compositeScore(nodeA, 0.9, 0)
+	scoreB := compositeScore(nodeB, 0.8, 0)
+
+	initial := []ScoredNode{
+		{Node: *nodeA, Score: scoreA, Similarity: 0.9},
+		{Node: *nodeB, Score: scoreB, Similarity: 0.8},
+	}
+
+	expanded, err := s.ExpandGraph(initial, 10)
+	if err != nil {
+		t.Fatalf("ExpandGraph: %v", err)
+	}
+
+	// Both should have boosted scores (structural bonus added)
+	for i := range expanded {
+		if expanded[i].ID == idA && expanded[i].Score <= scoreA {
+			t.Errorf("A's score should be boosted: got %.4f, original %.4f", expanded[i].Score, scoreA)
+		}
+		if expanded[i].ID == idB && expanded[i].Score <= scoreB {
+			t.Errorf("B's score should be boosted: got %.4f, original %.4f", expanded[i].Score, scoreB)
+		}
+	}
+}
+
+func TestExpandGraphCapsAtLimit(t *testing.T) {
+	s := testStoreWithVec(t, 4)
+
+	// Create A (in results) connected to B, C, D (neighbors)
+	idA, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "A", Importance: 0.8})
+	if err != nil {
+		t.Fatalf("AddNode A: %v", err)
+	}
+	for _, name := range []string{"B", "C", "D"} {
+		id, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: name, Importance: 0.7})
+		if err != nil {
+			t.Fatalf("AddNode %s: %v", name, err)
+		}
+		if _, err := s.AddEdge(idA, id, "relates_to"); err != nil {
+			t.Fatalf("AddEdge A→%s: %v", name, err)
+		}
+	}
+
+	initial := []ScoredNode{
+		{Node: Node{ID: idA, Type: TypeConcept, Content: "A", Importance: 0.8, DecayRate: 0.02}, Score: 0.6, Similarity: 0.9},
+	}
+
+	// Limit to 2 — should return at most 2
+	expanded, err := s.ExpandGraph(initial, 2)
+	if err != nil {
+		t.Fatalf("ExpandGraph: %v", err)
+	}
+	if len(expanded) > 2 {
+		t.Errorf("expected at most 2 results with limit=2, got %d", len(expanded))
+	}
+}
+
+func TestExpandGraphNoEdges(t *testing.T) {
+	s := testStoreWithVec(t, 4)
+
+	idA, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "isolated", Importance: 0.8})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+
+	initial := []ScoredNode{
+		{Node: Node{ID: idA, Type: TypeConcept, Content: "isolated", Importance: 0.8, DecayRate: 0.02}, Score: 0.6, Similarity: 0.9},
+	}
+
+	expanded, err := s.ExpandGraph(initial, 10)
+	if err != nil {
+		t.Fatalf("ExpandGraph: %v", err)
+	}
+
+	// Should return the same results unchanged
+	if len(expanded) != 1 {
+		t.Fatalf("expected 1 result (no expansion), got %d", len(expanded))
+	}
+	if expanded[0].Score != initial[0].Score {
+		t.Errorf("score should be unchanged for isolated node: got %.4f, want %.4f", expanded[0].Score, initial[0].Score)
 	}
 }

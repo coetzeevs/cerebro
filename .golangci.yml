@@ -1,15 +1,24 @@
+version: "2"
+
+formatters:
+  enable:
+    - gofmt
+
 linters:
   enable:
     - errcheck
     - govet
     - staticcheck
     - unused
-    - gosimple
     - ineffassign
-    - gofmt
     - misspell
     - gocritic
     - gosec
+  exclusions:
+    rules:
+      - linters:
+          - gosec
+        text: "G201|G202"
 
 linters-settings:
   errcheck:
@@ -19,7 +28,7 @@ linters-settings:
       - diagnostic
       - style
       - performance
-
-issues:
-  exclude-dirs:
-    - vendor
+  gosec:
+    excludes:
+      - G301
+      - G304

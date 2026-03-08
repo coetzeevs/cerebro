@@ -245,4 +245,3 @@ func setLastAccessed(t *testing.T, s *Store, nodeID string, when time.Time) {
 		t.Fatalf("setting last_accessed: %v", err)
 	}
 }
-

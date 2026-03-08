@@ -86,9 +86,9 @@ func writeEvictionLog(logPath string, result *store.GCResult) error {
 	defer f.Close()
 
 	entry := struct {
-		Timestamp string              `json:"timestamp"`
-		Threshold float64             `json:"threshold"`
-		DryRun    bool                `json:"dry_run"`
+		Timestamp string                `json:"timestamp"`
+		Threshold float64               `json:"threshold"`
+		DryRun    bool                  `json:"dry_run"`
 		Evicted   []store.GCEvictedNode `json:"evicted"`
 	}{
 		Timestamp: time.Now().Format(time.RFC3339),

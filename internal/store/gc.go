@@ -8,9 +8,9 @@ import (
 
 // GCResult contains the outcome of a garbage collection run.
 type GCResult struct {
-	Evaluated int            `json:"evaluated"`
-	Archived  int            `json:"archived"`
-	ByType    map[string]int `json:"by_type"`
+	Evaluated int             `json:"evaluated"`
+	Archived  int             `json:"archived"`
+	ByType    map[string]int  `json:"by_type"`
 	Evicted   []GCEvictedNode `json:"evicted,omitempty"`
 }
 
@@ -44,22 +44,22 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 		retentionScore float64
 	}
 	var candidates []candidate
-	for _, n := range nodes {
-		score := retentionScore(&n)
+	for i := range nodes {
+		score := retentionScore(&nodes[i])
 		if score < threshold {
-			candidates = append(candidates, candidate{node: n, retentionScore: score})
+			candidates = append(candidates, candidate{node: nodes[i], retentionScore: score})
 		}
 	}
 	result.Archived = len(candidates)
 
-	for _, c := range candidates {
-		result.ByType[string(c.node.Type)]++
+	for i := range candidates {
+		result.ByType[string(candidates[i].node.Type)]++
 		result.Evicted = append(result.Evicted, GCEvictedNode{
-			ID:             c.node.ID,
-			Type:           c.node.Type,
-			Content:        c.node.Content,
-			Importance:     c.node.Importance,
-			RetentionScore: c.retentionScore,
+			ID:             candidates[i].node.ID,
+			Type:           candidates[i].node.Type,
+			Content:        candidates[i].node.Content,
+			Importance:     candidates[i].node.Importance,
+			RetentionScore: candidates[i].retentionScore,
 		})
 	}
 
@@ -96,8 +96,8 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 	}
 	defer deleteNodeStmt.Close()
 
-	for _, c := range candidates {
-		n := c.node
+	for i := range candidates {
+		n := candidates[i].node
 		if _, err := archiveStmt.Exec(n.ID, n.Type, nullString(n.Subtype), n.Content, nullJSON(n.Metadata), n.Importance, n.Status, n.CreatedAt.Format(time.RFC3339)); err != nil {
 			return nil, fmt.Errorf("archiving node %s: %w", n.ID, err)
 		}

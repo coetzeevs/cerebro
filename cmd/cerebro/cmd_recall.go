@@ -99,10 +99,10 @@ func primeStratified(b *brain.Brain, limit int) []store.Node {
 		if err != nil {
 			continue
 		}
-		for _, n := range nodes {
-			if !seen[n.ID] {
-				seen[n.ID] = true
-				result = append(result, n)
+		for i := range nodes {
+			if !seen[nodes[i].ID] {
+				seen[nodes[i].ID] = true
+				result = append(result, nodes[i])
 			}
 		}
 	}

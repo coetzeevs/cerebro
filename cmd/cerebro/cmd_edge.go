@@ -16,7 +16,7 @@ func init() {
 			if err != nil {
 				return err
 			}
-			defer b.Close()
+			defer func() { _ = b.Close() }()
 
 			id, err := b.AddEdge(args[0], args[1], args[2])
 			if err != nil {

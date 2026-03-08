@@ -37,7 +37,7 @@ func runSupersede(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	newID, err := b.Supersede(oldID, content, store.NodeType(nodeType),
 		brain.WithImportance(supersedeImportanceFlag))

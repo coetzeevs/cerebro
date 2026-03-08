@@ -65,11 +65,11 @@ func (p *Provider) Embed(ctx context.Context, text string) ([]float32, error) {
 	if err != nil {
 		return nil, fmt.Errorf("calling Ollama API: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("Ollama API returned %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("ollama API returned %d: %s", resp.StatusCode, string(body))
 	}
 
 	var result embeddingResponse

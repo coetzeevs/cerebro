@@ -32,7 +32,7 @@ func runGC(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	defer b.Close()
+	defer func() { _ = b.Close() }()
 
 	result, err := b.GC(gcThresholdFlag, gcDryRunFlag)
 	if err != nil {
@@ -76,14 +76,14 @@ func runGC(cmd *cobra.Command, args []string) error {
 }
 
 func writeEvictionLog(logPath string, result *store.GCResult) error {
-	if err := os.MkdirAll(filepath.Dir(logPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o750); err != nil {
 		return err
 	}
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644) //nolint:gosec // log path from CLI flag
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer f.Close() //nolint:errcheck
 
 	entry := struct {
 		Timestamp string                `json:"timestamp"`

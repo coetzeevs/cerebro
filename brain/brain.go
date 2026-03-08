@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"time"
 
 	"github.com/coetzeevs/cerebro/internal/embed"
 	"github.com/coetzeevs/cerebro/internal/embed/noop"
@@ -267,6 +269,75 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 	return b.store.ExpandGraph(results, limit)
 }
 
+// SearchWithGlobal searches both the project store (weight 1.0) and the global
+// store (weight 0.7), merges results, and returns the top-K by weighted score.
+func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, threshold float64, global *Brain) ([]store.ScoredNode, error) {
+	if b.embedder.Dimensions() == 0 {
+		return nil, fmt.Errorf("no embedding provider configured — search requires embeddings")
+	}
+
+	vec, err := b.embedder.Embed(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("embedding query: %w", err)
+	}
+
+	// Search project store
+	projectResults, err := b.store.VectorSearch(vec, limit*2, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("project search: %w", err)
+	}
+	projectResults, err = b.store.ExpandGraph(projectResults, limit*2)
+	if err != nil {
+		return nil, fmt.Errorf("project graph expansion: %w", err)
+	}
+
+	// Search global store
+	globalResults, err := global.store.VectorSearch(vec, limit*2, threshold)
+	if err != nil {
+		return nil, fmt.Errorf("global search: %w", err)
+	}
+	globalResults, err = global.store.ExpandGraph(globalResults, limit*2)
+	if err != nil {
+		return nil, fmt.Errorf("global graph expansion: %w", err)
+	}
+
+	return mergeSearchResults(projectResults, globalResults, limit), nil
+}
+
+// mergeSearchResults merges project and global results.
+// Project results keep their score. Global results are weighted by 0.7.
+// If a node ID appears in both, the project version wins.
+// Returns top-limit results sorted by score descending.
+func mergeSearchResults(project, global []store.ScoredNode, limit int) []store.ScoredNode {
+	seen := make(map[string]bool, len(project))
+	merged := make([]store.ScoredNode, 0, len(project)+len(global))
+
+	// Project results at full weight
+	for i := range project {
+		seen[project[i].ID] = true
+		merged = append(merged, project[i])
+	}
+
+	// Global results weighted by 0.7, skip duplicates
+	for i := range global {
+		if seen[global[i].ID] {
+			continue
+		}
+		global[i].Score *= 0.7
+		merged = append(merged, global[i])
+	}
+
+	// Sort by score descending
+	sort.Slice(merged, func(i, j int) bool {
+		return merged[i].Score > merged[j].Score
+	})
+
+	if len(merged) > limit {
+		merged = merged[:limit]
+	}
+	return merged
+}
+
 // embedAndStore generates an embedding and stores it in vec_nodes.
 func (b *Brain) embedAndStore(nodeID, content string) error {
 	if b.embedder.Dimensions() == 0 {
@@ -279,6 +350,106 @@ func (b *Brain) embedAndStore(nodeID, content string) error {
 	}
 
 	return b.store.StoreEmbedding(nodeID, vec)
+}
+
+// Promote copies a node from this brain to the destination (global) brain.
+// The global copy gets importance=0.5 and provenance metadata.
+// The source node's metadata is updated with a promoted_to_global reference.
+// Use WithPromoteContent to supply generalized content.
+func (b *Brain) Promote(ctx context.Context, nodeID string, dst *Brain, opts ...PromoteOption) (string, error) {
+	var o promoteOptions
+	for _, fn := range opts {
+		fn(&o)
+	}
+
+	// Load source node
+	srcNode, err := b.store.GetNode(nodeID)
+	if err != nil {
+		return "", fmt.Errorf("reading source node: %w", err)
+	}
+
+	content := srcNode.Content
+	if o.Content != "" {
+		content = o.Content
+	}
+
+	// Build provenance metadata for the global copy
+	provenance := map[string]any{
+		"promoted_from_node":    nodeID,
+		"promoted_from_project": projectHash(b.store.Path()),
+		"promoted_at":           time.Now().UTC().Format(time.RFC3339),
+	}
+	globalMeta, err := mergeMetadata(srcNode.Metadata, provenance)
+	if err != nil {
+		return "", fmt.Errorf("building provenance metadata: %w", err)
+	}
+
+	// Add to destination store with importance=0.5
+	globalID, err := dst.store.AddNode(&store.AddNodeOpts{
+		Type:           srcNode.Type,
+		Subtype:        srcNode.Subtype,
+		Content:        content,
+		Metadata:       globalMeta,
+		Importance:     0.5,
+		EmbeddingModel: dst.embedder.Model(),
+	})
+	if err != nil {
+		return "", fmt.Errorf("adding to global store: %w", err)
+	}
+
+	// Embed in destination store
+	if dst.embedder.Dimensions() > 0 {
+		vec, embedErr := dst.embedder.Embed(ctx, content)
+		if embedErr == nil {
+			_ = dst.store.StoreEmbedding(globalID, vec)
+		}
+	}
+
+	// Update source node metadata with reference to global copy
+	srcMeta, err := mergeMetadata(srcNode.Metadata, map[string]any{
+		"promoted_to_global": globalID,
+	})
+	if err != nil {
+		return globalID, nil // node was promoted, metadata update is best-effort
+	}
+	_ = b.store.UpdateNode(nodeID, store.UpdateNodeOpts{Metadata: srcMeta})
+
+	return globalID, nil
+}
+
+// projectHash extracts the project hash from a store path like ~/.cerebro/projects/<hash>.sqlite.
+func projectHash(storePath string) string {
+	base := filepath.Base(storePath)
+	ext := filepath.Ext(base)
+	return base[:len(base)-len(ext)]
+}
+
+// mergeMetadata merges extra key-value pairs into existing JSON metadata.
+func mergeMetadata(existing json.RawMessage, extra map[string]any) (json.RawMessage, error) {
+	base := make(map[string]any)
+	if len(existing) > 0 {
+		if err := json.Unmarshal(existing, &base); err != nil {
+			return nil, err
+		}
+	}
+	for k, v := range extra {
+		base[k] = v
+	}
+	return json.Marshal(base)
+}
+
+// Promote option types
+
+type promoteOptions struct {
+	Content string
+}
+
+// PromoteOption configures a Promote call.
+type PromoteOption func(*promoteOptions)
+
+// WithPromoteContent overrides the content for the global copy.
+func WithPromoteContent(c string) PromoteOption {
+	return func(o *promoteOptions) { o.Content = c }
 }
 
 // Option types

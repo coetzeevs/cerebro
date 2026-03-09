@@ -1,6 +1,7 @@
 package brain
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -587,5 +588,145 @@ func TestSearchWithGlobal_NoEmbedder(t *testing.T) {
 	_, err := src.SearchWithGlobal(context.Background(), "query", 10, 0.3, dst)
 	if err == nil {
 		t.Fatal("expected error without embedder")
+	}
+}
+
+// --- Export / Import tests ---
+
+func TestExport(t *testing.T) {
+	b := testBrain(t)
+
+	id1, _ := b.Add("concept one", store.TypeConcept, WithImportance(0.8))
+	id2, _ := b.Add("episode one", store.TypeEpisode)
+	if _, err := b.AddEdge(id1, id2, "relates_to"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	bundle, err := b.Export()
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	if len(bundle.Nodes) != 2 {
+		t.Errorf("expected 2 nodes, got %d", len(bundle.Nodes))
+	}
+	if len(bundle.Edges) != 1 {
+		t.Errorf("expected 1 edge, got %d", len(bundle.Edges))
+	}
+	if bundle.Version != store.ExportVersion {
+		t.Errorf("expected version=%s, got %s", store.ExportVersion, bundle.Version)
+	}
+}
+
+func TestImport(t *testing.T) {
+	src := testBrain(t)
+	id1, _ := src.Add("concept", store.TypeConcept, WithImportance(0.8))
+	id2, _ := src.Add("episode", store.TypeEpisode)
+	if _, err := src.AddEdge(id1, id2, "relates_to"); err != nil {
+		t.Fatalf("AddEdge: %v", err)
+	}
+
+	bundle, err := src.Export()
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	dst := testBrain(t)
+	result, err := dst.Import(bundle, store.ImportOptions{OnConflict: store.ConflictSkip})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+
+	if result.NodesImported != 2 {
+		t.Errorf("expected 2 imported, got %d", result.NodesImported)
+	}
+	if result.EdgesImported != 1 {
+		t.Errorf("expected 1 edge imported, got %d", result.EdgesImported)
+	}
+
+	// Verify data in destination
+	nwe, err := dst.Get(id1)
+	if err != nil {
+		t.Fatalf("Get from dst: %v", err)
+	}
+	if nwe.Content != "concept" {
+		t.Errorf("expected content='concept', got %q", nwe.Content)
+	}
+
+	// Should mark pending embeddings
+	pending, _ := dst.Store().GetMeta("has_pending_embeddings")
+	if pending != "true" {
+		t.Errorf("expected has_pending_embeddings=true, got %q", pending)
+	}
+}
+
+func TestImportFromJSON(t *testing.T) {
+	src := testBrain(t)
+	if _, err := src.Add("test node", store.TypeConcept, WithImportance(0.7)); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Export to JSON buffer
+	var buf bytes.Buffer
+	if err := src.ExportJSON(&buf); err != nil {
+		t.Fatalf("ExportJSON: %v", err)
+	}
+
+	// Import from JSON
+	dst := testBrain(t)
+	result, err := dst.ImportFromJSON(&buf, store.ImportOptions{OnConflict: store.ConflictSkip})
+	if err != nil {
+		t.Fatalf("ImportFromJSON: %v", err)
+	}
+	if result.NodesImported != 1 {
+		t.Errorf("expected 1 node imported, got %d", result.NodesImported)
+	}
+}
+
+func TestExportSQLite(t *testing.T) {
+	b := testBrain(t)
+	if _, err := b.Add("test", store.TypeConcept); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	outPath := filepath.Join(t.TempDir(), "export.sqlite")
+	if err := b.ExportSQLite(outPath); err != nil {
+		t.Fatalf("ExportSQLite: %v", err)
+	}
+
+	// Open and verify
+	dst, err := Open(outPath)
+	if err != nil {
+		t.Fatalf("Open exported: %v", err)
+	}
+	defer func() { _ = dst.Close() }()
+
+	nodes, err := dst.List(store.ListNodesOpts{})
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Errorf("expected 1 node in export, got %d", len(nodes))
+	}
+}
+
+func TestExportSQL(t *testing.T) {
+	b := testBrain(t)
+	if _, err := b.Add("node with 'quotes'", store.TypeConcept, WithImportance(0.6)); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if err := b.ExportSQL(&buf); err != nil {
+		t.Fatalf("ExportSQL: %v", err)
+	}
+
+	sql := buf.String()
+	if sql == "" {
+		t.Fatal("expected non-empty SQL output")
+	}
+	// Single quotes should be escaped
+	if !bytes.Contains(buf.Bytes(), []byte("''quotes''")) {
+		t.Errorf("expected escaped quotes in SQL, got: %s", sql)
 	}
 }

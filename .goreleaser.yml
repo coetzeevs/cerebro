@@ -23,3 +23,13 @@ archives:
 
 checksum:
   name_template: checksums.txt
+
+homebrew_casks:
+  - repository:
+      owner: coetzeevs
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    homepage: https://github.com/coetzeevs/cerebro
+    description: Local-first persistent memory system for AI agents
+    binaries:
+      - cerebro

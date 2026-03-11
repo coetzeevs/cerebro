@@ -16,6 +16,9 @@ builds:
       - -s -w
       - -X main.version={{.Version}}
       - -X main.commit={{.Commit}}
+    hooks:
+      post:
+        - codesign -s - -f "{{ .Path }}"
 
 archives:
   - formats:
@@ -33,3 +36,7 @@ homebrew_casks:
     description: Local-first persistent memory system for AI agents
     binaries:
       - cerebro
+    hooks:
+      post:
+        install: |
+          system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/cerebro"]

@@ -1,0 +1,73 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || echo 'Cerebro: no brain initialized for this project. Run: cerebro init -p \"$CLAUDE_PROJECT_DIR\"'; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true"
+          }
+        ]
+      },
+      {
+        "matcher": "compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "matcher": "manual",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Context compaction is imminent. Before compaction proceeds, review your current working context and use /remember to persist any critical information to Cerebro — architectural decisions, discovered constraints, work-in-progress state, or anything that would be costly to rediscover.'"
+          }
+        ]
+      },
+      {
+        "matcher": "auto",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'Context compaction is imminent. Before compaction proceeds, review your current working context and use /remember to persist any critical information to Cerebro — architectural decisions, discovered constraints, work-in-progress state, or anything that would be costly to rediscover.'"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cerebro gc --threshold 0.01 --log \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -24,6 +24,9 @@ archives:
   - formats:
       - tar.gz
 
+changelog:
+  disable: true
+
 checksum:
   name_template: checksums.txt
 

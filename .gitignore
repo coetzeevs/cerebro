@@ -33,3 +33,4 @@ vendor/
 *.sqlite-shm
 .cerebro-gc.log
 .claude/settings.local.json
+RELEASE_NOTES.md

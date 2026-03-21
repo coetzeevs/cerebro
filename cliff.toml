@@ -1,0 +1,44 @@
+[changelog]
+header = """# Changelog\n
+All notable changes to this project will be documented in this file.\n"""
+body = """
+{%- if version %}
+## [{{ version | trim_start_matches(pat="v") }}] - {{ timestamp | date(format="%Y-%m-%d") }}
+{% else -%}
+## [Unreleased]
+{% endif -%}
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits -%}
+- {{ commit.message | split(pat="\n") | first | upper_first | trim }} \
+  ([{{ commit.id | truncate(length=7, end="") }}](https://github.com/coetzeevs/cerebro/commit/{{ commit.id }}))\
+  {%- if commit.remote.pr_number %} \
+  ([#{{ commit.remote.pr_number }}](https://github.com/coetzeevs/cerebro/pull/{{ commit.remote.pr_number }}))\
+  {%- endif %}
+{% endfor -%}
+{% endfor %}
+"""
+footer = ""
+trim = true
+
+[git]
+conventional_commits = true
+filter_unconventional = true
+split_commits = false
+commit_parsers = [
+    { message = "^feat", group = "Features" },
+    { message = "^fix", group = "Bug Fixes" },
+    { message = "^docs", group = "Documentation" },
+    { message = "^doc", group = "Documentation" },
+    { message = "^perf", group = "Performance" },
+    { message = "^refactor", group = "Refactoring" },
+    { message = "^style", group = "Styling" },
+    { message = "^test", group = "Testing" },
+    { message = "^chore", group = "Miscellaneous" },
+    { message = "^ci", group = "CI/CD" },
+    { message = "^build", group = "Build" },
+]
+filter_commits = false
+tag_pattern = "v[0-9].*"
+sort_commits = "oldest"
+protect_breaking_commits = false

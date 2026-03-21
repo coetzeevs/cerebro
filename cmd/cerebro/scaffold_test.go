@@ -45,8 +45,8 @@ func TestScaffoldSettings_NewFile(t *testing.T) {
 		t.Fatal("expected hooks to be an object")
 	}
 
-	// Should have all three event types
-	for _, event := range []string{"SessionStart", "PreCompact", "SessionEnd"} {
+	// Should have all five event types
+	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreCompact", "PostCompact", "SessionEnd"} {
 		if _, ok := hooksMap[event]; !ok {
 			t.Errorf("missing hook event: %s", event)
 		}
@@ -110,7 +110,7 @@ func TestScaffoldSettings_AlreadyHasCerebro(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Write settings that already have cerebro hooks
+	// Write settings that already have ALL cerebro hook event types
 	existing := map[string]any{
 		"hooks": map[string]any{
 			"SessionStart": []any{
@@ -118,6 +118,38 @@ func TestScaffoldSettings_AlreadyHasCerebro(t *testing.T) {
 					"matcher": "startup",
 					"hooks": []any{
 						map[string]any{"type": "command", "command": "cerebro recall --prime"},
+					},
+				},
+			},
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro recall --prime"},
+					},
+				},
+			},
+			"PreCompact": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "echo cerebro precompact"},
+					},
+				},
+			},
+			"PostCompact": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "echo cerebro postcompact"},
+					},
+				},
+			},
+			"SessionEnd": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro gc"},
 					},
 				},
 			},
@@ -133,7 +165,91 @@ func TestScaffoldSettings_AlreadyHasCerebro(t *testing.T) {
 		t.Fatalf("scaffoldSettings: %v", err)
 	}
 	if created {
-		t.Error("expected created=false when cerebro hooks already present")
+		t.Error("expected created=false when all cerebro hook events already present")
+	}
+}
+
+func TestScaffoldSettings_UpgradeAddsNewEvents(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	claudeDir := filepath.Join(projectDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write old-style settings with only SessionStart, PreCompact, SessionEnd (no UserPromptSubmit/PostCompact)
+	oldSettings := map[string]any{
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "startup",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro recall --prime"},
+					},
+				},
+			},
+			"PreCompact": []any{
+				map[string]any{
+					"matcher": "manual",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "echo old precompact"},
+					},
+				},
+			},
+			"SessionEnd": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro gc"},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(oldSettings, "", "  ")
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := scaffoldSettings(projectDir)
+	if err != nil {
+		t.Fatalf("scaffoldSettings upgrade: %v", err)
+	}
+	if !created {
+		t.Error("expected created=true when adding missing event types")
+	}
+
+	// Read merged settings
+	merged, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var settings map[string]any
+	if err := json.Unmarshal(merged, &settings); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+
+	hooksMap, _ := settings["hooks"].(map[string]any)
+
+	// New events should be added
+	if _, ok := hooksMap["UserPromptSubmit"]; !ok {
+		t.Error("missing UserPromptSubmit after upgrade")
+	}
+	if _, ok := hooksMap["PostCompact"]; !ok {
+		t.Error("missing PostCompact after upgrade")
+	}
+
+	// Existing events should be preserved (not duplicated)
+	sessionStart, _ := hooksMap["SessionStart"].([]any)
+	if len(sessionStart) != 1 {
+		t.Errorf("expected 1 SessionStart entry (not duplicated), got %d", len(sessionStart))
+	}
+
+	// Existing hooks should keep their original commands
+	content := string(merged)
+	if !strings.Contains(content, "echo old precompact") {
+		t.Error("existing PreCompact hook was clobbered")
 	}
 }
 

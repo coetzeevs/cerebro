@@ -23,13 +23,16 @@ func init() {
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	id := args[0]
-
 	b, err := openBrain()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = b.Close() }()
+
+	id, err := resolveID(b, args[0])
+	if err != nil {
+		return err
+	}
 
 	var opts []brain.UpdateOption
 	if updateContentFlag != "" {

@@ -18,7 +18,16 @@ func init() {
 			}
 			defer func() { _ = b.Close() }()
 
-			if err := b.MarkConsolidated(args); err != nil {
+			resolved := make([]string, len(args))
+			for i, a := range args {
+				id, err := resolveID(b, a)
+				if err != nil {
+					return err
+				}
+				resolved[i] = id
+			}
+
+			if err := b.MarkConsolidated(resolved); err != nil {
 				return err
 			}
 			if !quietFlag {

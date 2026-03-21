@@ -10,6 +10,7 @@ func init() {
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "get <id>",
 		Short: "Retrieve a specific memory node with its edges",
+		Long:  `Retrieve a specific memory node with its edges. Accepts full UUIDs or unique short prefixes (minimum 4 characters).`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			b, err := openBrain()
@@ -18,7 +19,12 @@ func init() {
 			}
 			defer func() { _ = b.Close() }()
 
-			nwe, err := b.Get(args[0])
+			id, err := resolveID(b, args[0])
+			if err != nil {
+				return err
+			}
+
+			nwe, err := b.Get(id)
 			if err != nil {
 				return err
 			}

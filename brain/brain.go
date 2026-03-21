@@ -229,6 +229,11 @@ func (b *Brain) MarkConsolidated(ids []string) error {
 	return b.store.MarkConsolidated(ids)
 }
 
+// ResolveID resolves a full UUID or short prefix to a full node ID.
+func (b *Brain) ResolveID(prefix string) (string, error) {
+	return b.store.ResolvePrefix(prefix)
+}
+
 // Get retrieves a node with its edges.
 func (b *Brain) Get(id string) (*store.NodeWithEdges, error) {
 	return b.store.GetNodeWithEdges(id)

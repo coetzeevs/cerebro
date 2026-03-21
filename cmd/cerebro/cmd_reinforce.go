@@ -18,11 +18,16 @@ func init() {
 			}
 			defer func() { _ = b.Close() }()
 
-			if err := b.Reinforce(args[0]); err != nil {
+			id, err := resolveID(b, args[0])
+			if err != nil {
+				return err
+			}
+
+			if err := b.Reinforce(id); err != nil {
 				return err
 			}
 			if !quietFlag {
-				fmt.Printf("Reinforced %s\n", args[0])
+				fmt.Printf("Reinforced %s\n", id[:8])
 			}
 			return nil
 		},

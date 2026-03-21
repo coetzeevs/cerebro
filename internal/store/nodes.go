@@ -164,6 +164,51 @@ func (s *Store) MarkConsolidated(ids []string) error {
 	return tx.Commit()
 }
 
+// ResolvePrefix resolves a short ID prefix to a full UUID.
+// Accepts full UUIDs (returned as-is) or unique prefixes (minimum 4 chars).
+// Returns an error if the prefix is ambiguous or matches no nodes.
+func (s *Store) ResolvePrefix(prefix string) (string, error) {
+	if prefix == "" {
+		return "", fmt.Errorf("empty ID prefix")
+	}
+
+	// Full UUID — return as-is (36 chars = 8-4-4-4-12 with hyphens)
+	if len(prefix) == 36 {
+		return prefix, nil
+	}
+
+	if len(prefix) < 4 {
+		return "", fmt.Errorf("ID prefix too short (minimum 4 characters): %q", prefix)
+	}
+
+	rows, err := s.db.Query(`SELECT id FROM nodes WHERE id LIKE ?`, prefix+"%")
+	if err != nil {
+		return "", fmt.Errorf("resolving prefix: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
+
+	var matches []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return "", fmt.Errorf("scanning prefix match: %w", err)
+		}
+		matches = append(matches, id)
+	}
+	if err := rows.Err(); err != nil {
+		return "", fmt.Errorf("iterating prefix matches: %w", err)
+	}
+
+	switch len(matches) {
+	case 0:
+		return "", fmt.Errorf("no node found with prefix %q", prefix)
+	case 1:
+		return matches[0], nil
+	default:
+		return "", fmt.Errorf("ambiguous prefix %q matches %d nodes", prefix, len(matches))
+	}
+}
+
 // GetNode retrieves a single node by ID.
 func (s *Store) GetNode(id string) (*Node, error) {
 	row := s.db.QueryRow(`SELECT id, type, subtype, content, metadata, importance, decay_rate,

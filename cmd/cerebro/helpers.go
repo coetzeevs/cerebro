@@ -104,6 +104,11 @@ func outputStats(stats *store.Stats) {
 	}
 }
 
+// resolveID opens the brain and resolves a short ID prefix to a full UUID.
+func resolveID(b *brain.Brain, prefix string) (string, error) {
+	return b.ResolveID(prefix)
+}
+
 // parseNodeType validates and returns a NodeType.
 func parseNodeType(s string) (store.NodeType, error) {
 	s = strings.ToLower(s)

@@ -54,20 +54,24 @@ func scaffoldSettings(projectDir string) (bool, error) {
 		return true, nil
 	}
 
-	// File exists — check if cerebro hooks already present
-	if strings.Contains(string(existingData), "cerebro") {
-		return false, nil
-	}
-
 	// Parse existing settings
 	var existingSettings map[string]any
 	if err := json.Unmarshal(existingData, &existingSettings); err != nil {
 		return false, fmt.Errorf("parsing existing settings.json: %w", err)
 	}
 
-	// Merge hooks
-	merged := mergeHooks(existingSettings, templateSettings)
-	out, err := json.MarshalIndent(merged, "", "  ")
+	// If cerebro hooks exist, only add missing event types (upgrade path)
+	if strings.Contains(string(existingData), "cerebro") {
+		added := addMissingEvents(existingSettings, templateSettings)
+		if !added {
+			return false, nil
+		}
+	} else {
+		// Fresh merge — no cerebro hooks yet
+		existingSettings = mergeHooks(existingSettings, templateSettings)
+	}
+
+	out, err := json.MarshalIndent(existingSettings, "", "  ")
 	if err != nil {
 		return false, fmt.Errorf("marshaling merged settings: %w", err)
 	}
@@ -77,6 +81,30 @@ func scaffoldSettings(projectDir string) (bool, error) {
 		return false, fmt.Errorf("writing merged settings.json: %w", err)
 	}
 	return true, nil
+}
+
+// addMissingEvents adds template event types that don't exist in the current settings.
+// Existing events are left untouched. Returns true if any events were added.
+func addMissingEvents(existing, template map[string]any) bool {
+	existingHooks, _ := existing["hooks"].(map[string]any)
+	templateHooks, _ := template["hooks"].(map[string]any)
+
+	if existingHooks == nil {
+		existingHooks = make(map[string]any)
+	}
+
+	added := false
+	for event, tHooks := range templateHooks {
+		if _, exists := existingHooks[event]; !exists {
+			existingHooks[event] = tHooks
+			added = true
+		}
+	}
+
+	if added {
+		existing["hooks"] = existingHooks
+	}
+	return added
 }
 
 // mergeHooks merges template hooks into existing settings.

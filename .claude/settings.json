@@ -38,22 +38,35 @@
         ]
       }
     ],
-    "PreCompact": [
+    "UserPromptSubmit": [
       {
-        "matcher": "manual",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Context compaction is imminent. Before compaction proceeds, review your current working context and use /remember to persist any critical information to Cerebro — architectural decisions, discovered constraints, work-in-progress state, or anything that would be costly to rediscover.'"
+            "command": "INPUT=$(cat); SID=$(echo \"$INPUT\" | grep -o '\"session_id\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4); if [ -z \"$SID\" ]; then SID=default; fi; S=\"/tmp/cerebro-primed-$SID\"; [ -f \"$S\" ] && exit 0; touch \"$S\"; cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || true"
           }
         ]
-      },
+      }
+    ],
+    "PreCompact": [
       {
-        "matcher": "auto",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",
-            "command": "echo 'Context compaction is imminent. Before compaction proceeds, review your current working context and use /remember to persist any critical information to Cerebro — architectural decisions, discovered constraints, work-in-progress state, or anything that would be costly to rediscover.'"
+            "command": "echo \"$(date -Iseconds) compaction starting\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true"
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "INPUT=$(cat); SID=$(echo \"$INPUT\" | grep -o '\"session_id\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4); rm -f \"/tmp/cerebro-primed-$SID\"; echo \"$(date -Iseconds) compaction completed\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true"
           }
         ]
       }

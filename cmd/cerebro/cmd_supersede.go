@@ -25,7 +25,6 @@ func init() {
 }
 
 func runSupersede(cmd *cobra.Command, args []string) error {
-	oldID := args[0]
 	content := strings.Join(args[1:], " ")
 
 	nodeType, err := parseNodeType(supersedeTypeFlag)
@@ -38,6 +37,11 @@ func runSupersede(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer func() { _ = b.Close() }()
+
+	oldID, err := resolveID(b, args[0])
+	if err != nil {
+		return err
+	}
 
 	newID, err := b.Supersede(oldID, content, store.NodeType(nodeType),
 		brain.WithImportance(supersedeImportanceFlag))

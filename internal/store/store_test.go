@@ -598,6 +598,53 @@ func TestGetNodesByIDs(t *testing.T) {
 	}
 }
 
+func TestResolvePrefix(t *testing.T) {
+	s := testStore(t)
+
+	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "alpha", Importance: 0.5})
+	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "beta", Importance: 0.5})
+
+	// Full UUID resolves to itself
+	resolved, err := s.ResolvePrefix(id1)
+	if err != nil {
+		t.Fatalf("ResolvePrefix full UUID: %v", err)
+	}
+	if resolved != id1 {
+		t.Errorf("expected %s, got %s", id1, resolved)
+	}
+
+	// 8-char prefix of id1 should resolve (statistically unique)
+	prefix := id1[:8]
+	resolved, err = s.ResolvePrefix(prefix)
+	if err != nil {
+		t.Fatalf("ResolvePrefix 8-char: %v", err)
+	}
+	if resolved != id1 {
+		t.Errorf("expected %s, got %s", id1, resolved)
+	}
+
+	// Nonexistent prefix should error (use short prefix, not full UUID)
+	_, err = s.ResolvePrefix("zzzzzzzz")
+	if err == nil {
+		t.Fatal("expected error for nonexistent prefix")
+	}
+
+	// Empty prefix should error
+	_, err = s.ResolvePrefix("")
+	if err == nil {
+		t.Fatal("expected error for empty prefix")
+	}
+
+	// Verify both nodes are independently resolvable
+	resolved2, err := s.ResolvePrefix(id2[:8])
+	if err != nil {
+		t.Fatalf("ResolvePrefix id2: %v", err)
+	}
+	if resolved2 != id2 {
+		t.Errorf("expected %s, got %s", id2, resolved2)
+	}
+}
+
 // testStore creates a temporary store for testing.
 func testStore(t *testing.T) *Store {
 	t.Helper()

@@ -25,13 +25,16 @@ The source node is updated with a reference to the promoted global node.`,
 }
 
 func runPromote(cmd *cobra.Command, args []string) error {
-	nodeID := args[0]
-
 	src, err := openBrain()
 	if err != nil {
 		return err
 	}
 	defer func() { _ = src.Close() }()
+
+	nodeID, err := resolveID(src, args[0])
+	if err != nil {
+		return err
+	}
 
 	dst, err := brain.Open(brain.GlobalPath())
 	if err != nil {

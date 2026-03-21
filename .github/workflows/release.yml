@@ -21,19 +21,8 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Generate CHANGELOG.md
-        uses: orhun/git-cliff-action@v4
-        id: changelog-full
-        with:
-          config: cliff.toml
-          args: --verbose
-        env:
-          OUTPUT: CHANGELOG.md
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Generate release notes
         uses: orhun/git-cliff-action@v4
-        id: changelog-release
         with:
           config: cliff.toml
           args: --verbose --latest --strip header
@@ -48,6 +37,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Generate CHANGELOG.md
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --verbose
+        env:
+          OUTPUT: CHANGELOG.md
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Commit CHANGELOG.md
         run: |

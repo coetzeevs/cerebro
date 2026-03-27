@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-03-27
+
+### Features
+- Re-export internal/store types from brain/ for external consumers (#17) ([06ad734](https://github.com/coetzeevs/cerebro/commit/06ad734)) ([#17](https://github.com/coetzeevs/cerebro/pull/17))
+
+Type aliases added to `brain/types.go`: `Node`, `Edge`, `ScoredNode`, `NodeWithEdges`, `NodeType`, `ListNodesOpts`, `Stats`, `GCResult`, `ExportBundle`, `ImportOptions`, `ImportResult`, `ConflictStrategy`. Constants: `Episode`, `Concept`, `Procedure`, `Reflection`, `ConflictSkip`, `ConflictReplace`, `ExportVersion`.
+
+This enables external Go modules (e.g., [qraftworx-cli](https://github.com/coetzeevs/qraftworx-cli)) to use `brain/` without importing `internal/store/`.
+
+## [1.1.1] - 2026-03-27
+
+### Miscellaneous
+- Revert changelog commit approach ([f968b3f](https://github.com/coetzeevs/cerebro/commit/f968b3f))
+
 ## [1.1.0] - 2026-03-21
 
 ### Features

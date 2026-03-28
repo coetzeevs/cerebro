@@ -94,6 +94,30 @@ cerebro stats
 
 This makes memory transparent to the agent — it just works across sessions without manual setup.
 
+## Go Library Usage
+
+As of v1.2.0, `brain/` re-exports all types needed by external Go modules:
+
+```go
+import "github.com/coetzeevs/cerebro/brain"
+
+b, _ := brain.Open(brain.ProjectPath("/my/project"))
+defer b.Close()
+
+id, _ := b.Add("PLA prints at 210C", brain.Concept, brain.WithImportance(0.7))
+results, _ := b.Search(ctx, "filament temperature", 5, 0.3)
+```
+
+Types available: `brain.Node`, `brain.ScoredNode`, `brain.NodeWithEdges`, `brain.NodeType`, `brain.ListNodesOpts`, `brain.Stats`, `brain.Edge`, `brain.GCResult`, `brain.ExportBundle`, `brain.ImportOptions`, `brain.ImportResult`.
+
+Constants: `brain.Episode`, `brain.Concept`, `brain.Procedure`, `brain.Reflection`.
+
+## Ecosystem
+
+| Project | Description |
+|---------|-------------|
+| [QraftWorx CLI](https://github.com/coetzeevs/qraftworx-cli) | Go CLI for AI-powered content automation. Uses Gemini as reasoning engine and Cerebro as persistent memory. Imports `brain/` directly. |
+
 ## Architecture
 
 Cerebro follows **Model B** (agent-managed memory): the AI agent decides what to store and retrieve. Cerebro is pure storage infrastructure with no LLM of its own. See [ADR-006](docs/adrs/adr-006-system-architecture-model-b.md) for the rationale.

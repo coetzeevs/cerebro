@@ -27,7 +27,7 @@ golangci-lint run
 
 ```
 cmd/cerebro/       CLI (Cobra commands)
-brain/             Public API (Brain type)
+brain/             Public API (Brain type) + type re-exports (brain/types.go)
 internal/store/    SQLite storage, schema, CRUD, vector search
 internal/embed/    Embedding provider interface + implementations
 ```

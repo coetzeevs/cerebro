@@ -26,8 +26,8 @@ func TestInitAndOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "1" {
-		t.Fatalf("expected schema_version=1, got %q", ver)
+	if ver != "2" {
+		t.Fatalf("expected schema_version=2, got %q", ver)
 	}
 
 	_ = s.Close()

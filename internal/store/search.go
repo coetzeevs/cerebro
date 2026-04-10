@@ -53,7 +53,8 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			v.distance,
 			n.id, n.type, n.subtype, n.content, n.metadata, n.importance, n.decay_rate,
 			n.access_count, n.times_reinforced, n.status, n.embedding_model,
-			n.created_at, n.last_accessed, n.last_reinforced
+			n.created_at, n.last_accessed, n.last_reinforced,
+			n.updated_at, n.last_surfaced
 		FROM (
 			SELECT node_id, distance
 			FROM vec_nodes
@@ -76,13 +77,14 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		var sn ScoredNode
 		var nodeID string
 		var distance float64
-		var subtype, metadata, lastReinf interface{}
+		var subtype, metadata, lastReinf, updatedAt, lastSurfaced interface{}
 
 		err := rows.Scan(
 			&nodeID, &distance,
 			&sn.ID, &sn.Type, &subtype, &sn.Content, &metadata, &sn.Importance, &sn.DecayRate,
 			&sn.AccessCount, &sn.TimesReinforced, &sn.Status, &sn.EmbeddingModel,
 			&sn.CreatedAt, &sn.LastAccessed, &lastReinf,
+			&updatedAt, &lastSurfaced,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
@@ -97,6 +99,14 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		if lr, ok := lastReinf.(string); ok {
 			t, _ := time.Parse(time.RFC3339, lr)
 			sn.LastReinforced = &t
+		}
+		if ua, ok := updatedAt.(string); ok {
+			t, _ := time.Parse(time.RFC3339, ua)
+			sn.UpdatedAt = &t
+		}
+		if ls, ok := lastSurfaced.(string); ok {
+			t, _ := time.Parse(time.RFC3339, ls)
+			sn.LastSurfaced = &t
 		}
 
 		// Convert cosine distance to similarity.

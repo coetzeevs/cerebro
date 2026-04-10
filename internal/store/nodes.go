@@ -50,9 +50,16 @@ type UpdateNodeOpts struct {
 }
 
 // UpdateNode modifies an existing node's content and/or importance.
+// When Content is set, updated_at is stamped to CURRENT_TIMESTAMP to record
+// that the knowledge content changed. Importance-only and metadata-only updates
+// do NOT touch updated_at — they are scoring/bookkeeping adjustments, not
+// knowledge refreshes.
 func (s *Store) UpdateNode(id string, opts UpdateNodeOpts) error {
 	if opts.Content != nil {
-		if _, err := s.db.Exec(`UPDATE nodes SET content = ? WHERE id = ?`, *opts.Content, id); err != nil {
+		if _, err := s.db.Exec(
+			`UPDATE nodes SET content = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			*opts.Content, id,
+		); err != nil {
 			return fmt.Errorf("updating content: %w", err)
 		}
 	}
@@ -212,7 +219,8 @@ func (s *Store) ResolvePrefix(prefix string) (string, error) {
 // GetNode retrieves a single node by ID.
 func (s *Store) GetNode(id string) (*Node, error) {
 	row := s.db.QueryRow(`SELECT id, type, subtype, content, metadata, importance, decay_rate,
-		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced
+		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
+		updated_at, last_surfaced
 		FROM nodes WHERE id = ?`, id)
 	return scanNode(row)
 }
@@ -234,17 +242,19 @@ func (s *Store) GetNodeWithEdges(id string) (*NodeWithEdges, error) {
 
 // ListNodesOpts configures node listing filters.
 type ListNodesOpts struct {
-	Type    NodeType
-	Status  string
-	Since   *time.Time
-	Limit   int
-	OrderBy string // "importance", "created_at" (default: "created_at")
+	Type         NodeType
+	Status       string
+	Since        *time.Time // filters on created_at >= ?
+	SinceChanged *time.Time // filters on COALESCE(updated_at, created_at) >= ?
+	Limit        int
+	OrderBy      string // "importance", "created_at", "recently_changed" (default: "created_at")
 }
 
 // ListNodes returns nodes matching the given filters.
 func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
 	query := `SELECT id, type, subtype, content, metadata, importance, decay_rate,
-		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced
+		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
+		updated_at, last_surfaced
 		FROM nodes WHERE 1=1`
 	var args []any
 
@@ -258,12 +268,18 @@ func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
 	}
 	if opts.Since != nil {
 		query += ` AND created_at >= ?`
-		args = append(args, opts.Since.Format(time.RFC3339))
+		args = append(args, opts.Since.UTC().Format("2006-01-02 15:04:05"))
+	}
+	if opts.SinceChanged != nil {
+		query += ` AND COALESCE(updated_at, created_at) >= ?`
+		args = append(args, opts.SinceChanged.UTC().Format("2006-01-02 15:04:05"))
 	}
 
 	switch opts.OrderBy {
 	case "importance":
 		query += ` ORDER BY importance DESC`
+	case "recently_changed":
+		query += ` ORDER BY COALESCE(updated_at, created_at) DESC`
 	default:
 		query += ` ORDER BY created_at DESC`
 	}
@@ -371,7 +387,8 @@ func (s *Store) GetNodesByIDs(ids []string) ([]Node, error) {
 	}
 
 	query := fmt.Sprintf(`SELECT id, type, subtype, content, metadata, importance, decay_rate,
-		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced
+		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
+		updated_at, last_surfaced
 		FROM nodes WHERE id IN (%s) AND status = 'active'`, placeholders) //nolint:gosec // placeholders are ? not user input
 
 	rows, err := s.db.Query(query, args...)
@@ -391,15 +408,45 @@ func (s *Store) GetNodesByIDs(ids []string) ([]Node, error) {
 	return nodes, rows.Err()
 }
 
+// TouchSurfaced batch-updates last_surfaced = CURRENT_TIMESTAMP for the given node IDs.
+// This is called after session priming to record that the agent was shown these memories.
+// Empty slice is a no-op.
+func (s *Store) TouchSurfaced(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("beginning TouchSurfaced transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	stmt, err := tx.Prepare(`UPDATE nodes SET last_surfaced = CURRENT_TIMESTAMP WHERE id = ?`)
+	if err != nil {
+		return fmt.Errorf("preparing TouchSurfaced statement: %w", err)
+	}
+	defer stmt.Close() //nolint:errcheck // best-effort cleanup
+
+	for _, id := range ids {
+		if _, err := stmt.Exec(id); err != nil {
+			return fmt.Errorf("touching surfaced for node %s: %w", id, err)
+		}
+	}
+
+	return tx.Commit()
+}
+
 // helpers
 
 func scanNode(row *sql.Row) (*Node, error) {
 	n := &Node{}
-	var subtype, metadata, lastReinforced sql.NullString
+	var subtype, metadata, lastReinforced, updatedAt, lastSurfaced sql.NullString
 	err := row.Scan(
 		&n.ID, &n.Type, &subtype, &n.Content, &metadata,
 		&n.Importance, &n.DecayRate, &n.AccessCount, &n.TimesReinforced,
 		&n.Status, &n.EmbeddingModel, &n.CreatedAt, &n.LastAccessed, &lastReinforced,
+		&updatedAt, &lastSurfaced,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scanning node: %w", err)
@@ -411,17 +458,26 @@ func scanNode(row *sql.Row) (*Node, error) {
 	if lastReinforced.Valid {
 		t, _ := time.Parse(time.RFC3339, lastReinforced.String)
 		n.LastReinforced = &t
+	}
+	if updatedAt.Valid {
+		t, _ := time.Parse(time.RFC3339, updatedAt.String)
+		n.UpdatedAt = &t
+	}
+	if lastSurfaced.Valid {
+		t, _ := time.Parse(time.RFC3339, lastSurfaced.String)
+		n.LastSurfaced = &t
 	}
 	return n, nil
 }
 
 func scanNodeFromRows(rows *sql.Rows) (*Node, error) {
 	n := &Node{}
-	var subtype, metadata, lastReinforced sql.NullString
+	var subtype, metadata, lastReinforced, updatedAt, lastSurfaced sql.NullString
 	err := rows.Scan(
 		&n.ID, &n.Type, &subtype, &n.Content, &metadata,
 		&n.Importance, &n.DecayRate, &n.AccessCount, &n.TimesReinforced,
 		&n.Status, &n.EmbeddingModel, &n.CreatedAt, &n.LastAccessed, &lastReinforced,
+		&updatedAt, &lastSurfaced,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scanning node: %w", err)
@@ -433,6 +489,14 @@ func scanNodeFromRows(rows *sql.Rows) (*Node, error) {
 	if lastReinforced.Valid {
 		t, _ := time.Parse(time.RFC3339, lastReinforced.String)
 		n.LastReinforced = &t
+	}
+	if updatedAt.Valid {
+		t, _ := time.Parse(time.RFC3339, updatedAt.String)
+		n.UpdatedAt = &t
+	}
+	if lastSurfaced.Valid {
+		t, _ := time.Parse(time.RFC3339, lastSurfaced.String)
+		n.LastSurfaced = &t
 	}
 	return n, nil
 }

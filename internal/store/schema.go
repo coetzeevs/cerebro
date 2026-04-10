@@ -2,7 +2,7 @@ package store
 
 import "fmt"
 
-const schemaVersion = "1"
+const schemaVersion = "2"
 
 // applySchema creates all tables and indexes if they don't exist.
 func (s *Store) applySchema() error {
@@ -28,7 +28,9 @@ func (s *Store) applySchema() error {
 			embedding_model TEXT NOT NULL DEFAULT '',
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			last_accessed DATETIME DEFAULT CURRENT_TIMESTAMP,
-			last_reinforced DATETIME
+			last_reinforced DATETIME,
+			updated_at DATETIME,
+			last_surfaced DATETIME
 		)`,
 
 		// Relationship edges
@@ -65,6 +67,8 @@ func (s *Store) applySchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_nodes_type_status ON nodes(type, status)`,
 		`CREATE INDEX IF NOT EXISTS idx_nodes_importance ON nodes(importance DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_nodes_last_accessed ON nodes(last_accessed)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_updated_at ON nodes(updated_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_last_surfaced ON nodes(last_surfaced)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges(relation)`,
@@ -122,4 +126,51 @@ func (s *Store) GetMeta(key string) (string, error) {
 		return "", nil // key not found is not an error
 	}
 	return value, nil
+}
+
+// migrateSchema applies incremental schema migrations to an existing database.
+// It is called from Open() so that existing databases are upgraded on first access.
+// Each migration is guarded by a version check and wrapped in a transaction to
+// ensure atomicity: a crash mid-migration causes a full rollback on next open.
+func (s *Store) migrateSchema() error {
+	version, err := s.GetMeta("schema_version")
+	if err != nil {
+		return err
+	}
+
+	if version == "1" {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("beginning v1->v2 migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		stmts := []string{
+			`ALTER TABLE nodes ADD COLUMN updated_at DATETIME`,
+			`ALTER TABLE nodes ADD COLUMN last_surfaced DATETIME`,
+			`CREATE INDEX IF NOT EXISTS idx_nodes_updated_at ON nodes(updated_at)`,
+			`CREATE INDEX IF NOT EXISTS idx_nodes_last_surfaced ON nodes(last_surfaced)`,
+		}
+		for _, stmt := range stmts {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migrating v1->v2: %w", err)
+			}
+		}
+
+		// Version update MUST be inside the transaction. Using tx.Exec (not s.SetMeta)
+		// because SetMeta operates on s.db (the connection), not the transaction handle.
+		// This makes the entire migration atomic.
+		if _, err := tx.Exec(
+			`INSERT INTO schema_meta (key, value) VALUES ('schema_version', '2')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		); err != nil {
+			return fmt.Errorf("updating schema version to 2: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing v1->v2 migration: %w", err)
+		}
+	}
+
+	return nil
 }

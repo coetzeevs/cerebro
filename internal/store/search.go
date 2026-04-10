@@ -128,6 +128,41 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 	return results, rows.Err()
 }
 
+// Surprise computes the surprise signal for a node: how likely the agent is to
+// have a stale view of this memory. Returns a value in [0, 1].
+//
+//   - 1.0: updated_at > last_surfaced, or updated_at set and last_surfaced is nil.
+//     The agent is guaranteed to have stale information.
+//   - 0.5: both updated_at and last_surfaced are nil. Unknown state — conservative default.
+//   - 1 - exp(-0.01 * hours_since_surfaced): gradual growth when last_surfaced is set
+//     and updated_at is nil or <= last_surfaced.
+func Surprise(n *Node) float64 {
+	if n.UpdatedAt != nil {
+		if n.LastSurfaced == nil || n.UpdatedAt.After(*n.LastSurfaced) {
+			return 1.0
+		}
+	}
+
+	if n.LastSurfaced == nil {
+		// Both nil: unknown state.
+		return 0.5
+	}
+
+	// updated_at is nil or <= last_surfaced: gradual growth with time since surfaced.
+	hoursSinceSurfaced := time.Since(*n.LastSurfaced).Hours()
+	if hoursSinceSurfaced < 0 {
+		hoursSinceSurfaced = 0
+	}
+	return 1.0 - math.Exp(-0.01*hoursSinceSurfaced)
+}
+
+// PrimeScore is the scoring function for session priming candidates.
+// It combines importance (0.6) with surprise (0.4) to prefer high-value stale memories.
+// Exported for use by brain layer and potential external consumers.
+func PrimeScore(n *Node) float64 {
+	return 0.6*n.Importance + 0.4*Surprise(n)
+}
+
 // compositeScore computes the four-signal retrieval score.
 // Weights: relevance=0.35, importance=0.25, recency=0.25, structural=0.15
 // The structural parameter should be 0-1 (scaled by edge weight).

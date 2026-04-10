@@ -152,6 +152,105 @@ func TestPrimeStratifiedBudgetRespectsLimit(t *testing.T) {
 	}
 }
 
+// TestPrimeStratifiedPrimeScoreOrdering verifies that within a type stratum,
+// a moderately-important but stale node can rank ahead of a high-importance
+// recently-surfaced node.
+func TestPrimeStratifiedPrimeScoreOrdering(t *testing.T) {
+	b := testBrain(t)
+
+	// Add two concepts:
+	// - highImp: importance=0.9, just surfaced (surprise≈0) → PrimeScore≈0.54
+	// - staleMed: importance=0.3, updated after last surfaced (surprise=1.0) → PrimeScore=0.58
+
+	highImpID, err := b.Add("high importance concept", store.TypeConcept, brain.WithImportance(0.9))
+	if err != nil {
+		t.Fatalf("Add highImp: %v", err)
+	}
+	// Mark highImp as recently surfaced (small surprise).
+	if err := b.Store().TouchSurfaced([]string{highImpID}); err != nil {
+		t.Fatalf("TouchSurfaced highImp: %v", err)
+	}
+
+	staleMedID, err := b.Add("moderate importance stale concept", store.TypeConcept, brain.WithImportance(0.3))
+	if err != nil {
+		t.Fatalf("Add staleMed: %v", err)
+	}
+	// Set updated_at AFTER last_surfaced to trigger surprise=1.0.
+	pastSurfaced := time.Now().UTC().Add(-2 * time.Hour).Format("2006-01-02 15:04:05")
+	recentUpdated := time.Now().UTC().Add(-time.Hour).Format("2006-01-02 15:04:05")
+	if _, err := b.Store().DB().Exec(
+		`UPDATE nodes SET last_surfaced = ?, updated_at = ? WHERE id = ?`,
+		pastSurfaced, recentUpdated, staleMedID,
+	); err != nil {
+		t.Fatalf("set staleMed timestamps: %v", err)
+	}
+
+	// With limit=2 concepts budget, primeStratified should return both
+	// but stale should rank first.
+	nodes := primeStratified(b, 10)
+
+	// Find positions of both nodes.
+	posHigh, posMed := -1, -1
+	for i, n := range nodes {
+		if n.ID == highImpID {
+			posHigh = i
+		}
+		if n.ID == staleMedID {
+			posMed = i
+		}
+	}
+
+	if posHigh < 0 {
+		t.Error("highImp node not found in prime results")
+	}
+	if posMed < 0 {
+		t.Error("staleMed node not found in prime results")
+	}
+
+	if posHigh >= 0 && posMed >= 0 && posMed > posHigh {
+		t.Errorf("stale+moderate (pos %d) should rank before high+recent (pos %d)", posMed, posHigh)
+	}
+}
+
+// TestPrimeStratifiedTouchSurfaced verifies that after primeStratified, all
+// selected nodes have last_surfaced set.
+func TestPrimeStratifiedTouchSurfaced(t *testing.T) {
+	b := testBrain(t)
+
+	ids := make([]string, 0, 3)
+	for i := 0; i < 3; i++ {
+		id, err := b.Add("concept", store.TypeConcept, brain.WithImportance(0.7))
+		if err != nil {
+			t.Fatalf("Add concept %d: %v", i, err)
+		}
+		ids = append(ids, id)
+	}
+
+	// Verify last_surfaced is nil before prime.
+	for _, id := range ids {
+		node, err := b.Store().GetNode(id)
+		if err != nil {
+			t.Fatalf("GetNode: %v", err)
+		}
+		if node.LastSurfaced != nil {
+			t.Errorf("expected nil last_surfaced before prime, got %v", node.LastSurfaced)
+		}
+	}
+
+	_ = primeStratified(b, 10)
+
+	// After prime, all returned nodes should have last_surfaced set.
+	for _, id := range ids {
+		node, err := b.Store().GetNode(id)
+		if err != nil {
+			t.Fatalf("GetNode post-prime: %v", err)
+		}
+		if node.LastSurfaced == nil {
+			t.Errorf("expected last_surfaced set after prime for node %s", id[:8])
+		}
+	}
+}
+
 // TestPrimeStratifiedRecentWindowIs48h verifies that the recent stratum uses
 // a 48-hour window (nodes updated more than 48h ago are excluded).
 func TestPrimeStratifiedRecentWindowIs48h(t *testing.T) {

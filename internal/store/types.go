@@ -66,8 +66,9 @@ type Edge struct {
 // ScoredNode is a node with a computed retrieval score.
 type ScoredNode struct {
 	Node
-	Score      float64 `json:"score"`
-	Similarity float64 `json:"similarity,omitempty"` // cosine similarity from vector search
+	Score      float64   `json:"score"`
+	Similarity float64   `json:"similarity,omitempty"` // cosine similarity from vector search
+	Embedding  []float32 `json:"-"`                    // loaded on demand for MMR diversity
 }
 
 // NodeWithEdges is a node along with its connected edges.

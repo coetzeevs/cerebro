@@ -47,11 +47,14 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = b.Close() }()
 
-	// Prime mode without query: type-stratified retrieval for balanced session briefing.
-	// Budget: 40% concepts, 30% procedures, 20% episodes, 10% reflections.
-	// No embeddings needed — works as a reliable session-start briefing.
+	// Prime mode without query: MMR-based retrieval for diverse, surprise-aware
+	// session briefing. Falls back to stratified if MMR encounters an error.
 	if recallPrimeFlag && query == "" {
-		nodes := primeStratified(b, recallLimitFlag)
+		nodes, err := primeMMR(b, recallLimitFlag, store.PrimeScore)
+		if err != nil || nodes == nil {
+			// Fallback to stratified (no embeddings or other error)
+			nodes = primeStratified(b, recallLimitFlag)
+		}
 		outputNodeList(nodes)
 		return nil
 	}

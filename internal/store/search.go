@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"sort"
@@ -126,6 +127,68 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 	}
 
 	return results, rows.Err()
+}
+
+// CosineSimilarity returns the cosine similarity between two float32 vectors.
+// Returns 0 for zero vectors (avoids NaN/Inf from division by zero).
+func CosineSimilarity(a, b []float32) float64 {
+	if len(a) != len(b) || len(a) == 0 {
+		return 0
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		ai, bi := float64(a[i]), float64(b[i])
+		dot += ai * bi
+		normA += ai * ai
+		normB += bi * bi
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// GetEmbeddings batch-loads embeddings for the given node IDs from vec_nodes.
+// Returns a map of nodeID → embedding. Nodes without embeddings are absent from the map.
+// Returns an error only for unexpected failures; a missing vec_nodes table returns an empty map.
+func (s *Store) GetEmbeddings(ids []string) (map[string][]float32, error) {
+	if len(ids) == 0 {
+		return map[string][]float32{}, nil
+	}
+
+	placeholders := make([]byte, 0, len(ids)*2)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`SELECT node_id, embedding FROM vec_nodes WHERE node_id IN (%s)`, placeholders) //nolint:gosec // placeholders are ? not user input
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		// vec_nodes may not exist if the vector table was never initialized.
+		return map[string][]float32{}, nil //nolint:nilerr // graceful degradation
+	}
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
+
+	result := make(map[string][]float32, len(ids))
+	for rows.Next() {
+		var nodeID string
+		var raw []byte
+		if err := rows.Scan(&nodeID, &raw); err != nil {
+			continue
+		}
+		vec := deserializeFloat32(raw)
+		if vec == nil {
+			continue
+		}
+		result[nodeID] = vec
+	}
+	return result, rows.Err()
 }
 
 // Surprise computes the surprise signal for a node: how likely the agent is to
@@ -265,4 +328,20 @@ func (s *Store) ExpandGraph(results []ScoredNode, limit int) ([]ScoredNode, erro
 	}
 
 	return results, nil
+}
+
+// deserializeFloat32 converts raw bytes (little-endian IEEE 754) to a float32 slice.
+// This mirrors the format produced by sqlite_vec.SerializeFloat32.
+// Returns nil if the byte slice length is not a multiple of 4.
+func deserializeFloat32(b []byte) []float32 {
+	if len(b)%4 != 0 {
+		return nil
+	}
+	n := len(b) / 4
+	vec := make([]float32, n)
+	for i := 0; i < n; i++ {
+		bits := binary.LittleEndian.Uint32(b[i*4 : (i+1)*4])
+		vec[i] = math.Float32frombits(bits)
+	}
+	return vec
 }

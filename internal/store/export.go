@@ -161,12 +161,14 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 	switch opts.OnConflict {
 	case ConflictReplace:
 		insertSQL = `INSERT OR REPLACE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate,
-			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
+			updated_at, last_surfaced)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	default: // skip
 		insertSQL = `INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate,
-			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
+			updated_at, last_surfaced)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	}
 
 	nodeStmt, err := tx.Prepare(insertSQL)
@@ -177,9 +179,15 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 
 	for i := range bundle.Nodes {
 		n := &bundle.Nodes[i]
-		var lastReinforced any
+		var lastReinforced, updatedAt, lastSurfaced any
 		if n.LastReinforced != nil {
 			lastReinforced = n.LastReinforced.UTC().Format(time.RFC3339)
+		}
+		if n.UpdatedAt != nil {
+			updatedAt = n.UpdatedAt.UTC().Format(time.RFC3339)
+		}
+		if n.LastSurfaced != nil {
+			lastSurfaced = n.LastSurfaced.UTC().Format(time.RFC3339)
 		}
 
 		res, err := nodeStmt.Exec(
@@ -189,6 +197,8 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 			n.CreatedAt.UTC().Format(time.RFC3339),
 			n.LastAccessed.UTC().Format(time.RFC3339),
 			lastReinforced,
+			updatedAt,
+			lastSurfaced,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("importing node %s: %w", n.ID, err)
@@ -284,14 +294,24 @@ func (s *Store) ExportSQL(w io.Writer) error {
 		if n.LastReinforced != nil {
 			lastReinforced = fmt.Sprintf("'%s'", n.LastReinforced.UTC().Format(time.RFC3339))
 		}
+		updatedAt := "NULL"
+		if n.UpdatedAt != nil {
+			updatedAt = fmt.Sprintf("'%s'", n.UpdatedAt.UTC().Format(time.RFC3339))
+		}
+		lastSurfaced := "NULL"
+		if n.LastSurfaced != nil {
+			lastSurfaced = fmt.Sprintf("'%s'", n.LastSurfaced.UTC().Format(time.RFC3339))
+		}
 		if _, err := fmt.Fprintf(w,
-			"INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced) VALUES ('%s', '%s', %s, '%s', %s, %f, %f, %d, %d, '%s', '%s', '%s', '%s', %s);\n",
+			"INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced, updated_at, last_surfaced) VALUES ('%s', '%s', %s, '%s', %s, %f, %f, %d, %d, '%s', '%s', '%s', '%s', %s, %s, %s);\n",
 			sqlEscape(n.ID), n.Type, subtype, sqlEscape(n.Content), metadata,
 			n.Importance, n.DecayRate, n.AccessCount, n.TimesReinforced,
 			n.Status, sqlEscape(n.EmbeddingModel),
 			n.CreatedAt.UTC().Format(time.RFC3339),
 			n.LastAccessed.UTC().Format(time.RFC3339),
 			lastReinforced,
+			updatedAt,
+			lastSurfaced,
 		); err != nil {
 			return err
 		}

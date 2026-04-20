@@ -1,6 +1,7 @@
 package store
 
 import (
+	"encoding/binary"
 	"fmt"
 	"math"
 	"sort"
@@ -53,7 +54,8 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			v.distance,
 			n.id, n.type, n.subtype, n.content, n.metadata, n.importance, n.decay_rate,
 			n.access_count, n.times_reinforced, n.status, n.embedding_model,
-			n.created_at, n.last_accessed, n.last_reinforced
+			n.created_at, n.last_accessed, n.last_reinforced,
+			n.updated_at, n.last_surfaced
 		FROM (
 			SELECT node_id, distance
 			FROM vec_nodes
@@ -76,13 +78,14 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		var sn ScoredNode
 		var nodeID string
 		var distance float64
-		var subtype, metadata, lastReinf interface{}
+		var subtype, metadata, lastReinf, updatedAt, lastSurfaced interface{}
 
 		err := rows.Scan(
 			&nodeID, &distance,
 			&sn.ID, &sn.Type, &subtype, &sn.Content, &metadata, &sn.Importance, &sn.DecayRate,
 			&sn.AccessCount, &sn.TimesReinforced, &sn.Status, &sn.EmbeddingModel,
 			&sn.CreatedAt, &sn.LastAccessed, &lastReinf,
+			&updatedAt, &lastSurfaced,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
@@ -97,6 +100,14 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		if lr, ok := lastReinf.(string); ok {
 			t, _ := time.Parse(time.RFC3339, lr)
 			sn.LastReinforced = &t
+		}
+		if ua, ok := updatedAt.(string); ok {
+			t, _ := time.Parse(time.RFC3339, ua)
+			sn.UpdatedAt = &t
+		}
+		if ls, ok := lastSurfaced.(string); ok {
+			t, _ := time.Parse(time.RFC3339, ls)
+			sn.LastSurfaced = &t
 		}
 
 		// Convert cosine distance to similarity.
@@ -116,6 +127,103 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 	}
 
 	return results, rows.Err()
+}
+
+// CosineSimilarity returns the cosine similarity between two float32 vectors.
+// Returns 0 for zero vectors (avoids NaN/Inf from division by zero).
+func CosineSimilarity(a, b []float32) float64 {
+	if len(a) != len(b) || len(a) == 0 {
+		return 0
+	}
+	var dot, normA, normB float64
+	for i := range a {
+		ai, bi := float64(a[i]), float64(b[i])
+		dot += ai * bi
+		normA += ai * ai
+		normB += bi * bi
+	}
+	if normA == 0 || normB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(normA) * math.Sqrt(normB))
+}
+
+// GetEmbeddings batch-loads embeddings for the given node IDs from vec_nodes.
+// Returns a map of nodeID → embedding. Nodes without embeddings are absent from the map.
+// Returns an error only for unexpected failures; a missing vec_nodes table returns an empty map.
+func (s *Store) GetEmbeddings(ids []string) (map[string][]float32, error) {
+	if len(ids) == 0 {
+		return map[string][]float32{}, nil
+	}
+
+	placeholders := make([]byte, 0, len(ids)*2)
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		if i > 0 {
+			placeholders = append(placeholders, ',')
+		}
+		placeholders = append(placeholders, '?')
+		args[i] = id
+	}
+
+	query := fmt.Sprintf(`SELECT node_id, embedding FROM vec_nodes WHERE node_id IN (%s)`, placeholders) //nolint:gosec // placeholders are ? not user input
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		// vec_nodes may not exist if the vector table was never initialized.
+		return map[string][]float32{}, nil //nolint:nilerr // graceful degradation
+	}
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
+
+	result := make(map[string][]float32, len(ids))
+	for rows.Next() {
+		var nodeID string
+		var raw []byte
+		if err := rows.Scan(&nodeID, &raw); err != nil {
+			continue
+		}
+		vec := deserializeFloat32(raw)
+		if vec == nil {
+			continue
+		}
+		result[nodeID] = vec
+	}
+	return result, rows.Err()
+}
+
+// Surprise computes the surprise signal for a node: how likely the agent is to
+// have a stale view of this memory. Returns a value in [0, 1].
+//
+//   - 1.0: updated_at > last_surfaced, or updated_at set and last_surfaced is nil.
+//     The agent is guaranteed to have stale information.
+//   - 0.5: both updated_at and last_surfaced are nil. Unknown state — conservative default.
+//   - 1 - exp(-0.01 * hours_since_surfaced): gradual growth when last_surfaced is set
+//     and updated_at is nil or <= last_surfaced.
+func Surprise(n *Node) float64 {
+	if n.UpdatedAt != nil {
+		if n.LastSurfaced == nil || n.UpdatedAt.After(*n.LastSurfaced) {
+			return 1.0
+		}
+	}
+
+	if n.LastSurfaced == nil {
+		// Both nil: unknown state.
+		return 0.5
+	}
+
+	// updated_at is nil or <= last_surfaced: gradual growth with time since surfaced.
+	hoursSinceSurfaced := time.Since(*n.LastSurfaced).Hours()
+	if hoursSinceSurfaced < 0 {
+		hoursSinceSurfaced = 0
+	}
+	return 1.0 - math.Exp(-0.01*hoursSinceSurfaced)
+}
+
+// PrimeScore is the scoring function for session priming candidates.
+// It combines importance (0.6) with surprise (0.4) to prefer high-value stale memories.
+// Exported for use by brain layer and potential external consumers.
+func PrimeScore(n *Node) float64 {
+	return 0.6*n.Importance + 0.4*Surprise(n)
 }
 
 // compositeScore computes the four-signal retrieval score.
@@ -220,4 +328,20 @@ func (s *Store) ExpandGraph(results []ScoredNode, limit int) ([]ScoredNode, erro
 	}
 
 	return results, nil
+}
+
+// deserializeFloat32 converts raw bytes (little-endian IEEE 754) to a float32 slice.
+// This mirrors the format produced by sqlite_vec.SerializeFloat32.
+// Returns nil if the byte slice length is not a multiple of 4.
+func deserializeFloat32(b []byte) []float32 {
+	if len(b)%4 != 0 {
+		return nil
+	}
+	n := len(b) / 4
+	vec := make([]float32, n)
+	for i := 0; i < n; i++ {
+		bits := binary.LittleEndian.Uint32(b[i*4 : (i+1)*4])
+		vec[i] = math.Float32frombits(bits)
+	}
+	return vec
 }

@@ -24,11 +24,20 @@ type Store struct {
 
 // Open opens an existing brain database at the given path.
 // Returns an error if the database does not exist.
+// Applies any pending schema migrations before returning.
 func Open(path string) (*Store, error) {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil, fmt.Errorf("brain not found at %s — run 'cerebro init' first", path)
 	}
-	return open(path)
+	s, err := open(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.migrateSchema(); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("migrating schema: %w", err)
+	}
+	return s, nil
 }
 
 // Init creates and initializes a new brain database at the given path.

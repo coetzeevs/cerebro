@@ -164,8 +164,8 @@ func TestGetAllMeta(t *testing.T) {
 		t.Errorf("expected key2=val2, got %q", meta["key2"])
 	}
 	// schema_version is set by Init
-	if meta["schema_version"] != "1" {
-		t.Errorf("expected schema_version=1, got %q", meta["schema_version"])
+	if meta["schema_version"] != "2" {
+		t.Errorf("expected schema_version=2, got %q", meta["schema_version"])
 	}
 }
 

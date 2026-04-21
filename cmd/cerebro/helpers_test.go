@@ -2,6 +2,8 @@ package main
 
 import (
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/coetzeevs/cerebro/brain"
@@ -58,6 +60,46 @@ func TestResolveBrainPath_UsesResolveProjectDir(t *testing.T) {
 	want := brain.ProjectPath("/env/path")
 	if got != want {
 		t.Errorf("resolveBrainPath() = %q, want %q", got, want)
+	}
+}
+
+func TestBackupBrain_CreatesBackup(t *testing.T) {
+	// Create a real brain to backup
+	dir := t.TempDir()
+	brainPath := filepath.Join(dir, "projects", "test.sqlite")
+	b, err := brain.Init(brainPath, brain.EmbedConfig{Provider: "none"})
+	if err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	_ = b.Close()
+
+	backupsDir := filepath.Join(dir, "backups")
+	backupPath, err := backupBrain(brainPath, backupsDir)
+	if err != nil {
+		t.Fatalf("backupBrain: %v", err)
+	}
+
+	// Backup file should exist
+	if _, err := os.Stat(backupPath); os.IsNotExist(err) {
+		t.Errorf("backup file does not exist at %s", backupPath)
+	}
+
+	// Backup should be in the backups directory
+	if !strings.HasPrefix(backupPath, backupsDir) {
+		t.Errorf("backup path %q not under backups dir %q", backupPath, backupsDir)
+	}
+
+	// Backup filename should contain the original basename
+	if !strings.Contains(filepath.Base(backupPath), "test_") {
+		t.Errorf("backup filename %q should contain 'test_'", filepath.Base(backupPath))
+	}
+}
+
+func TestBackupBrain_NonExistentSource(t *testing.T) {
+	dir := t.TempDir()
+	_, err := backupBrain(filepath.Join(dir, "nonexistent.sqlite"), filepath.Join(dir, "backups"))
+	if err == nil {
+		t.Error("expected error for non-existent source, got nil")
 	}
 }
 

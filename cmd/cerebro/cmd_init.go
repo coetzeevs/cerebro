@@ -13,6 +13,7 @@ var initEmbedModel string
 var initEmbedDims int
 var initGlobalFlag bool
 var initSkipIntegration bool
+var initForceFlag bool
 
 func init() {
 	cmd := &cobra.Command{
@@ -33,6 +34,7 @@ Use --skip-integration to create only the database without integration files.`,
 	cmd.Flags().IntVar(&initEmbedDims, "embed-dims", 0, "Embedding dimensions (auto-detected from provider if 0)")
 	cmd.Flags().BoolVar(&initGlobalFlag, "global", false, "Initialize the global store (~/.cerebro/global.sqlite)")
 	cmd.Flags().BoolVar(&initSkipIntegration, "skip-integration", false, "Skip Claude Code integration file generation")
+	cmd.Flags().BoolVar(&initForceFlag, "force", false, "Overwrite existing skill files with latest templates")
 	rootCmd.AddCommand(cmd)
 }
 
@@ -40,6 +42,22 @@ func runInit(_ *cobra.Command, _ []string) error {
 	path := resolveBrainPath()
 	if initGlobalFlag {
 		path = brain.GlobalPath()
+	}
+
+	// If brain already exists, create a backup before re-initializing
+	brainExists := false
+	if _, err := os.Stat(path); err == nil {
+		brainExists = true
+		if !quietFlag {
+			fmt.Printf("Brain already exists at %s\n", path)
+		}
+		backupPath, bErr := backupBrain(path, defaultBackupsDir())
+		if bErr != nil {
+			return fmt.Errorf("backup before re-init failed: %w", bErr)
+		}
+		if !quietFlag {
+			fmt.Printf("Backed up to %s\n", backupPath)
+		}
 	}
 
 	cfg := brain.EmbedConfig{
@@ -55,9 +73,12 @@ func runInit(_ *cobra.Command, _ []string) error {
 	defer func() { _ = b.Close() }()
 
 	if !quietFlag {
-		if initGlobalFlag {
+		switch {
+		case brainExists:
+			fmt.Println("Re-initialized brain (schema validated)")
+		case initGlobalFlag:
 			fmt.Printf("Initialized global brain at %s\n", path)
-		} else {
+		default:
 			fmt.Printf("Initialized brain at %s\n", path)
 		}
 		fmt.Printf("Embedding provider: %s\n", initEmbedProvider)
@@ -85,12 +106,16 @@ func runInit(_ *cobra.Command, _ []string) error {
 	}
 
 	// Scaffold skill files
-	if skillsCreated, err := scaffoldSkills(projectDir); err != nil {
+	if skillsCreated, err := scaffoldSkills(projectDir, initForceFlag); err != nil {
 		fmt.Fprintf(os.Stderr, "Warning: could not scaffold skills: %v\n", err)
 	} else if skillsCreated > 0 && !quietFlag {
-		fmt.Printf("Created %d skill files in .claude/skills/\n", skillsCreated)
+		if initForceFlag {
+			fmt.Printf("Updated %d skill files in .claude/skills/\n", skillsCreated)
+		} else {
+			fmt.Printf("Created %d skill files in .claude/skills/\n", skillsCreated)
+		}
 	} else if !quietFlag {
-		fmt.Println("Skipped skills (already present)")
+		fmt.Println("Skipped skills (already present, use --force to update)")
 	}
 
 	// Scaffold CLAUDE.md section

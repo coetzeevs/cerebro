@@ -136,8 +136,9 @@ func mergeHooks(existing, template map[string]any) map[string]any {
 }
 
 // scaffoldSkills creates .claude/skills/{remember,recall,consolidate}/SKILL.md files.
-// Skips any skill file that already exists. Returns count of files created.
-func scaffoldSkills(projectDir string) (int, error) {
+// Skips any skill file that already exists unless force is true.
+// Returns count of files written.
+func scaffoldSkills(projectDir string, force bool) (int, error) {
 	skills := map[string][]byte{
 		"remember":    skillRememberTemplate,
 		"recall":      skillRecallTemplate,
@@ -149,8 +150,8 @@ func scaffoldSkills(projectDir string) (int, error) {
 		skillDir := filepath.Join(projectDir, ".claude", "skills", name)
 		skillPath := filepath.Join(skillDir, "SKILL.md")
 
-		// Skip if exists
-		if _, err := os.Stat(skillPath); err == nil {
+		// Skip if exists (unless force)
+		if _, err := os.Stat(skillPath); err == nil && !force {
 			continue
 		}
 

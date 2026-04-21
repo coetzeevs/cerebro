@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -169,8 +170,9 @@ func scaffoldSkills(projectDir string, force bool) (int, error) {
 }
 
 // scaffoldCLAUDEMD appends the Cerebro Memory System section to CLAUDE.md.
-// Creates the file if it doesn't exist. Returns true if changes were made.
-func scaffoldCLAUDEMD(projectDir string) (bool, error) {
+// Creates the file if it doesn't exist. When force is true, replaces an
+// existing Cerebro section with the latest template. Returns true if changes were made.
+func scaffoldCLAUDEMD(projectDir string, force bool) (bool, error) {
 	claudeMDPath := filepath.Join(projectDir, "CLAUDE.md")
 
 	existing, err := os.ReadFile(claudeMDPath)
@@ -178,21 +180,35 @@ func scaffoldCLAUDEMD(projectDir string) (bool, error) {
 		return false, fmt.Errorf("reading CLAUDE.md: %w", err)
 	}
 
-	// Check if marker already present
-	if strings.Contains(string(existing), "## Cerebro Memory System") {
+	marker := "## Cerebro Memory System"
+	hasMarker := strings.Contains(string(existing), marker)
+
+	// Skip if marker present and not forcing
+	if hasMarker && !force {
 		return false, nil
 	}
 
-	// Append (or create) with the cerebro section
 	var content []byte
-	if len(existing) > 0 {
-		content = existing
-		if !strings.HasSuffix(string(content), "\n") {
+	if hasMarker && force {
+		// Replace: keep everything before the marker, append new template
+		idx := bytes.Index(existing, []byte(marker))
+		before := strings.TrimRight(string(existing[:idx]), "\n\r\t ")
+		content = []byte(before)
+		if len(content) > 0 {
+			content = append(content, '\n', '\n')
+		}
+		content = append(content, claudeMDSectionTemplate...)
+	} else {
+		// Append (or create)
+		if len(existing) > 0 {
+			content = existing
+			if !strings.HasSuffix(string(content), "\n") {
+				content = append(content, '\n')
+			}
 			content = append(content, '\n')
 		}
-		content = append(content, '\n')
+		content = append(content, claudeMDSectionTemplate...)
 	}
-	content = append(content, claudeMDSectionTemplate...)
 
 	if err := os.WriteFile(claudeMDPath, content, 0o644); err != nil { //nolint:gosec // CLAUDE.md needs to be readable
 		return false, fmt.Errorf("writing CLAUDE.md: %w", err)

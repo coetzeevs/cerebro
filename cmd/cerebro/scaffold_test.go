@@ -343,7 +343,7 @@ func TestScaffoldCLAUDEMD_NewFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldCLAUDEMD(projectDir)
+	created, err := scaffoldCLAUDEMD(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldCLAUDEMD: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestScaffoldCLAUDEMD_ExistingWithoutMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldCLAUDEMD(projectDir)
+	created, err := scaffoldCLAUDEMD(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldCLAUDEMD: %v", err)
 	}
@@ -405,12 +405,55 @@ func TestScaffoldCLAUDEMD_AlreadyHasMarker(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldCLAUDEMD(projectDir)
+	created, err := scaffoldCLAUDEMD(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldCLAUDEMD: %v", err)
 	}
 	if created {
 		t.Error("expected created=false when marker already present")
+	}
+}
+
+func TestScaffoldCLAUDEMD_ForceReplacesSection(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(projectDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write CLAUDE.md with an old cerebro section
+	existing := "# My Project\n\nSome instructions.\n\n## Cerebro Memory System\n\nOld content that should be replaced.\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "CLAUDE.md"), []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := scaffoldCLAUDEMD(projectDir, true)
+	if err != nil {
+		t.Fatalf("scaffoldCLAUDEMD with force: %v", err)
+	}
+	if !created {
+		t.Error("expected created=true when force=true")
+	}
+
+	data, _ := os.ReadFile(filepath.Join(projectDir, "CLAUDE.md"))
+	content := string(data)
+
+	// User content before the cerebro section should be preserved
+	if !strings.Contains(content, "# My Project") {
+		t.Error("content before cerebro section was clobbered")
+	}
+	if !strings.Contains(content, "Some instructions.") {
+		t.Error("content before cerebro section was clobbered")
+	}
+
+	// Old cerebro content should be gone
+	if strings.Contains(content, "Old content that should be replaced") {
+		t.Error("old cerebro section content was NOT replaced")
+	}
+
+	// New template content should be present
+	if !strings.Contains(content, "### Project directory") {
+		t.Error("new template content missing (expected ### Project directory)")
 	}
 }
 

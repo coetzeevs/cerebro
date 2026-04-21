@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.1] - 2026-04-21
+
+### Bug Fixes
+- Run schema migration before apply in Init() for v1 databases (#23) ([a2d3f28](https://github.com/coetzeevs/cerebro/commit/a2d3f28)) ([#23](https://github.com/coetzeevs/cerebro/pull/23))
+
 ## [1.5.0] - 2026-04-21
 
 ### Features

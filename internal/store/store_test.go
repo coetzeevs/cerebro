@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -38,6 +39,71 @@ func TestInitAndOpen(t *testing.T) {
 		t.Fatalf("Open: %v", err)
 	}
 	_ = s2.Close()
+}
+
+func TestInit_ReInitOnV1Schema(t *testing.T) {
+	// Simulate a v1 database that lacks updated_at and last_surfaced columns.
+	// Re-running Init on it must migrate first, then apply schema without error.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v1.sqlite")
+
+	// Create a minimal v1 schema manually
+	dsn := "file:" + path + "?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=ON"
+	db, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatalf("opening db: %v", err)
+	}
+	v1Stmts := []string{
+		`CREATE TABLE schema_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+		`INSERT INTO schema_meta (key, value) VALUES ('schema_version', '1')`,
+		`CREATE TABLE nodes (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL CHECK (type IN ('episode', 'concept', 'procedure', 'reflection')),
+			subtype TEXT,
+			content TEXT NOT NULL,
+			metadata JSON,
+			importance REAL DEFAULT 0.5,
+			decay_rate REAL NOT NULL DEFAULT 0.01,
+			access_count INTEGER DEFAULT 0,
+			times_reinforced INTEGER DEFAULT 0,
+			status TEXT DEFAULT 'active',
+			embedding_model TEXT NOT NULL DEFAULT '',
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_accessed DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_reinforced DATETIME
+		)`,
+		`CREATE TABLE edges (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			source_id TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			relation TEXT NOT NULL,
+			weight REAL DEFAULT 1.0,
+			metadata JSON,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
+			FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE,
+			UNIQUE (source_id, target_id, relation)
+		)`,
+	}
+	for _, stmt := range v1Stmts {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("creating v1 schema: %v (stmt: %s)", err, stmt[:40])
+		}
+	}
+	_ = db.Close()
+
+	// Now re-init on this v1 database — this should NOT error
+	s, err := Init(path)
+	if err != nil {
+		t.Fatalf("Init on v1 database: %v", err)
+	}
+	defer func() { _ = s.Close() }()
+
+	// Verify migration happened: updated_at column should exist
+	ver, _ := s.GetMeta("schema_version")
+	if ver != "2" {
+		t.Errorf("expected schema_version=2 after re-init, got %q", ver)
+	}
 }
 
 func TestAddAndGetNode(t *testing.T) {

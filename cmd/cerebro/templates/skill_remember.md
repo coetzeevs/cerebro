@@ -22,7 +22,7 @@ Formulate the memory content as a clear, self-contained statement.
 ## Step 2: Check for existing related memories
 
 ```bash
-cerebro search "$ARGUMENTS" --limit 5 --threshold 0.7 --format json
+cerebro search "$ARGUMENTS" --limit 5 --threshold 0.7 --format json -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 3: Reconcile
@@ -37,24 +37,24 @@ Review the search results and decide for each match:
 
 For ADD (no matches or genuinely new):
 ```bash
-cerebro add --type <type> --importance <0.0-1.0> "<content>"
+cerebro add --type <type> --importance <0.0-1.0> "<content>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 For UPDATE:
 ```bash
-cerebro update <existing_id> --content "<refined content>"
+cerebro update <existing_id> --content "<refined content>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 For SUPERSEDE:
 ```bash
-cerebro supersede <old_id> --type <type> --importance <0.0-1.0> "<new content>"
+cerebro supersede <old_id> --type <type> --importance <0.0-1.0> "<new content>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 5: Create edges
 
 If the new/updated memory relates to other known memories:
 ```bash
-cerebro edge <source_id> <target_id> <relation>
+cerebro edge <source_id> <target_id> <relation> -p "$CLAUDE_PROJECT_DIR"
 ```
 
 Relations: `relates_to`, `depends_on`, `learned_from`, `resulted_in`, `supersedes`, `blocks`, `implements`

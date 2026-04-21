@@ -69,10 +69,7 @@ func runInit(_ *cobra.Command, _ []string) error {
 	}
 
 	// Resolve the project directory for scaffolding
-	projectDir := projectFlag
-	if projectDir == "" {
-		projectDir, _ = os.Getwd()
-	}
+	projectDir := resolveProjectDir()
 
 	if !quietFlag {
 		fmt.Println()

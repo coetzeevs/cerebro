@@ -10,13 +10,22 @@ import (
 	"github.com/coetzeevs/cerebro/internal/store"
 )
 
-// resolveBrainPath determines the brain file path from flags or cwd.
-func resolveBrainPath() string {
-	dir := projectFlag
-	if dir == "" {
-		dir, _ = os.Getwd()
+// resolveProjectDir determines the project directory from flag, env var, or cwd.
+// Resolution order: --project flag > CLAUDE_PROJECT_DIR env var > cwd.
+func resolveProjectDir() string {
+	if projectFlag != "" {
+		return projectFlag
 	}
-	return brain.ProjectPath(dir)
+	if dir := os.Getenv("CLAUDE_PROJECT_DIR"); dir != "" {
+		return dir
+	}
+	dir, _ := os.Getwd()
+	return dir
+}
+
+// resolveBrainPath determines the brain file path from the resolved project directory.
+func resolveBrainPath() string {
+	return brain.ProjectPath(resolveProjectDir())
 }
 
 // openBrain opens the brain for the current project.

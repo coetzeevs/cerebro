@@ -41,7 +41,7 @@ func Open(path string) (*Store, error) {
 }
 
 // Init creates and initializes a new brain database at the given path.
-// If the database already exists, it validates the schema version.
+// If the database already exists, it migrates the schema before applying.
 func Init(path string) (*Store, error) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // project data dir
@@ -51,6 +51,13 @@ func Init(path string) (*Store, error) {
 	s, err := open(path)
 	if err != nil {
 		return nil, err
+	}
+
+	// Migrate first so older schemas get columns/indexes before applySchema runs.
+	// For fresh databases, migrateSchema is a no-op (no schema_meta table yet).
+	if err := s.migrateSchema(); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("migrating schema: %w", err)
 	}
 
 	if err := s.applySchema(); err != nil {

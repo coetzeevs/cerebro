@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-04-21
+
+### Features
+- Session-pinned brain resolution via CLAUDE_PROJECT_DIR (ADR-008) (#20) ([5df4722](https://github.com/coetzeevs/cerebro/commit/5df4722)) ([#20](https://github.com/coetzeevs/cerebro/pull/20))
+  - `resolveProjectDir()` checks `--project` flag > `CLAUDE_PROJECT_DIR` env var > cwd
+  - All skill templates now pass `-p "$CLAUDE_PROJECT_DIR"` to every cerebro command
+  - CLAUDE.md template includes project directory usage instructions
+- Safe init with automatic backup and `cerebro backup` command (ADR-009) (#21) ([10cca42](https://github.com/coetzeevs/cerebro/commit/10cca42)) ([#21](https://github.com/coetzeevs/cerebro/pull/21))
+  - Automatic backup before re-initializing an existing brain (`~/.cerebro/backups/`)
+  - New `cerebro backup` command for on-demand backups (supports `-o` for custom path)
+  - New `--force` flag on `cerebro init` to overwrite existing skill templates
+  - Improved init output distinguishing fresh vs re-initialization
+
+## [1.4.0] - 2026-04-14
+
+### Features
+- Recall recency enhancement (ADR-007, Phases 1-3) (#19) ([9d82a69](https://github.com/coetzeevs/cerebro/commit/9d82a69)) ([#19](https://github.com/coetzeevs/cerebro/pull/19))
+
+## [1.3.0] - 2026-04-07
+
+### Documentation
+- Cleanup stale qraft-cli docs, add SECURITY.md and CONTRIBUTING.md (#18) ([37d5ed9](https://github.com/coetzeevs/cerebro/commit/37d5ed9)) ([#18](https://github.com/coetzeevs/cerebro/pull/18))
+
 ## [1.2.0] - 2026-03-27
 
 ### Features

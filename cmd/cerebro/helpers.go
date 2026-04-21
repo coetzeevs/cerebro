@@ -3,8 +3,11 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/coetzeevs/cerebro/brain"
 	"github.com/coetzeevs/cerebro/internal/store"
@@ -111,6 +114,85 @@ func outputStats(stats *store.Stats) {
 	if stats.PendingEmbeddings > 0 {
 		fmt.Printf("Pending embeddings: %d\n", stats.PendingEmbeddings)
 	}
+}
+
+// backupBrain creates a timestamped copy of the brain database.
+// Returns the backup file path.
+func backupBrain(brainPath, backupsDir string) (string, error) {
+	if _, err := os.Stat(brainPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("brain not found at %s", brainPath)
+	}
+
+	if err := os.MkdirAll(backupsDir, 0o750); err != nil {
+		return "", fmt.Errorf("creating backups directory: %w", err)
+	}
+
+	base := strings.TrimSuffix(filepath.Base(brainPath), filepath.Ext(brainPath))
+	ts := time.Now().UTC().Format("20060102_150405")
+	backupPath := filepath.Join(backupsDir, fmt.Sprintf("%s_%s.sqlite", base, ts))
+
+	src, err := os.Open(brainPath)
+	if err != nil {
+		return "", fmt.Errorf("opening brain: %w", err)
+	}
+	defer src.Close() //nolint:errcheck // read-only
+
+	dst, err := os.Create(backupPath) //nolint:gosec // backup path is derived internally
+	if err != nil {
+		return "", fmt.Errorf("creating backup: %w", err)
+	}
+	defer dst.Close() //nolint:errcheck // best-effort cleanup
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return "", fmt.Errorf("copying brain: %w", err)
+	}
+
+	if err := dst.Close(); err != nil {
+		return "", fmt.Errorf("finalizing backup: %w", err)
+	}
+
+	return backupPath, nil
+}
+
+// backupBrainTo creates a copy of the brain database at the specified path.
+// Returns the output path.
+func backupBrainTo(brainPath, outputPath string) (string, error) {
+	if _, err := os.Stat(brainPath); os.IsNotExist(err) {
+		return "", fmt.Errorf("brain not found at %s", brainPath)
+	}
+
+	dir := filepath.Dir(outputPath)
+	if err := os.MkdirAll(dir, 0o750); err != nil {
+		return "", fmt.Errorf("creating output directory: %w", err)
+	}
+
+	src, err := os.Open(brainPath)
+	if err != nil {
+		return "", fmt.Errorf("opening brain: %w", err)
+	}
+	defer src.Close() //nolint:errcheck // read-only
+
+	dst, err := os.Create(outputPath) //nolint:gosec // user-specified output path
+	if err != nil {
+		return "", fmt.Errorf("creating backup: %w", err)
+	}
+	defer dst.Close() //nolint:errcheck // best-effort cleanup
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return "", fmt.Errorf("copying brain: %w", err)
+	}
+
+	if err := dst.Close(); err != nil {
+		return "", fmt.Errorf("finalizing backup: %w", err)
+	}
+
+	return outputPath, nil
+}
+
+// defaultBackupsDir returns the default backups directory (~/.cerebro/backups).
+func defaultBackupsDir() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".cerebro", "backups")
 }
 
 // resolveID opens the brain and resolves a short ID prefix to a full UUID.

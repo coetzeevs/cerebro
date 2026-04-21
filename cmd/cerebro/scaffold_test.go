@@ -260,7 +260,7 @@ func TestScaffoldSkills_NewFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldSkills(projectDir)
+	created, err := scaffoldSkills(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldSkills: %v", err)
 	}
@@ -290,7 +290,7 @@ func TestScaffoldSkills_ExistingSkipped(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldSkills(projectDir)
+	created, err := scaffoldSkills(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldSkills: %v", err)
 	}
@@ -302,6 +302,37 @@ func TestScaffoldSkills_ExistingSkipped(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
 	if string(data) != "custom skill" {
 		t.Error("existing skill file was overwritten")
+	}
+}
+
+func TestScaffoldSkills_ForceOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	skillDir := filepath.Join(projectDir, ".claude", "skills", "remember")
+	if err := os.MkdirAll(skillDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write existing skill with old content
+	if err := os.WriteFile(filepath.Join(skillDir, "SKILL.md"), []byte("old skill content"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := scaffoldSkills(projectDir, true)
+	if err != nil {
+		t.Fatalf("scaffoldSkills with force: %v", err)
+	}
+	if created != 3 {
+		t.Errorf("expected 3 skills created (force=true), got %d", created)
+	}
+
+	// Existing file should be overwritten with template content
+	data, _ := os.ReadFile(filepath.Join(skillDir, "SKILL.md"))
+	if string(data) == "old skill content" {
+		t.Error("existing skill file was NOT overwritten with force=true")
+	}
+	if !strings.Contains(string(data), "cerebro") {
+		t.Error("overwritten skill should contain cerebro commands")
 	}
 }
 

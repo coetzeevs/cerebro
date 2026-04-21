@@ -11,12 +11,12 @@ allowed-tools: Bash(cerebro *)
 ## Step 1: Review unconsolidated episodes
 
 ```bash
-cerebro list --type episode --status active --format json
+cerebro list --type episode --status active --format json -p "$CLAUDE_PROJECT_DIR"
 ```
 
 If `$ARGUMENTS` was provided, filter by searching for that topic:
 ```bash
-cerebro search "$ARGUMENTS" --limit 50 --threshold 0.3 --format json
+cerebro search "$ARGUMENTS" --limit 50 --threshold 0.3 --format json -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 2: Identify clusters
@@ -32,34 +32,34 @@ For each cluster, create appropriate higher-order nodes:
 
 **Concepts** for accumulated factual knowledge:
 ```bash
-cerebro add --type concept --importance <0.0-1.0> "<synthesized fact>"
+cerebro add --type concept --importance <0.0-1.0> "<synthesized fact>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 **Procedures** for learned rules or workflows:
 ```bash
-cerebro add --type procedure --importance <0.0-1.0> "<rule or workflow>"
+cerebro add --type procedure --importance <0.0-1.0> "<rule or workflow>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 **Reflections** for meta-observations:
 ```bash
-cerebro add --type reflection --importance <0.0-1.0> "<observation>"
+cerebro add --type reflection --importance <0.0-1.0> "<observation>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 4: Link and mark
 
 For each new node, link it to its source episodes:
 ```bash
-cerebro edge <new_id> <episode_id> learned_from
+cerebro edge <new_id> <episode_id> learned_from -p "$CLAUDE_PROJECT_DIR"
 ```
 
 Then mark the source episodes as consolidated:
 ```bash
-cerebro mark-consolidated <episode_id> [<episode_id>...]
+cerebro mark-consolidated <episode_id> [<episode_id>...] -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 5: Report
 
 After consolidation, show the brain's current state:
 ```bash
-cerebro stats
+cerebro stats -p "$CLAUDE_PROJECT_DIR"
 ```

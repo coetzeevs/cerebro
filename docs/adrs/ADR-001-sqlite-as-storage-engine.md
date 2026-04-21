@@ -1,7 +1,7 @@
 # ADR-001: SQLite + sqlite-vec as Storage Engine
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

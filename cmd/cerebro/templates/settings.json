@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || echo 'Cerebro: no brain initialized for this project. Run: cerebro init -p \"$CLAUDE_PROJECT_DIR\"'; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
+            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null || echo 'Cerebro: no brain initialized for this project. Run: cerebro init -p \"$CLAUDE_PROJECT_DIR\"'; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi"
           }
         ]
       },

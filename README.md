@@ -42,19 +42,18 @@ make install
 ## Quick start
 
 ```bash
-# Initialize a brain for your project (creates .cerebro/brain.db)
+# Initialize a brain for your project (stored at ~/.cerebro/projects/<hash>.sqlite)
 cerebro init
 
 # Store a memory
-cerebro add --type concept --name "auth-flow" \
-  --body "JWT-based auth with refresh tokens, 15min access / 7d refresh" \
-  --importance 0.8
+cerebro add --type concept --importance 0.8 \
+  "JWT-based auth with refresh tokens, 15min access / 7d refresh"
 
 # Recall relevant memories (composite-scored)
 cerebro recall "how does authentication work"
 
 # Link memories
-cerebro edge <source-id> <target-id> --type derived_from
+cerebro edge <source-id> <target-id> derived_from
 
 # Search by vector similarity only
 cerebro search "token expiration"
@@ -67,34 +66,87 @@ cerebro stats
 
 | Command | Description |
 |---------|-------------|
+| `init` | Bootstrap brain + Claude Code integration |
 | `add` | Store a new memory node |
 | `get` | Retrieve a node with its edges |
-| `update` | Modify an existing node |
+| `update` | Modify an existing node's content or importance |
 | `list` | List nodes with optional filters |
-| `recall` | Composite-scored retrieval for a query |
+| `recall` | Composite-scored retrieval (supports `--prime` for session start) |
 | `search` | Raw vector similarity search |
 | `edge` | Create a relationship between nodes |
 | `reinforce` | Increment access count on a memory |
 | `supersede` | Replace a memory with an updated version |
 | `mark-consolidated` | Mark episodes as consolidated |
-| `gc` | Evict decayed memories to archive |
 | `promote` | Copy a node to the global store |
+| `gc` | Evict decayed memories to archive |
 | `export` | Export brain (json, sql, or sqlite) |
 | `import` | Import memories from JSON export |
-| `init` | Bootstrap brain + Claude Code integration |
+| `backup` | Create a timestamped backup of the brain database |
 | `stats` | Show brain health metrics |
+
+## Memory types
+
+Cerebro supports four semantic memory types, each with a different decay rate:
+
+| Type | Purpose | Half-life |
+|------|---------|-----------|
+| `episode` | What happened — event-based memories | ~1-2 weeks |
+| `concept` | What I know — learned knowledge | ~2-3 months |
+| `procedure` | How to do it — procedural knowledge | ~6+ months |
+| `reflection` | What I concluded — self-reflective insights | ~3-4 weeks |
+
+Decay drives garbage collection: low-importance episodes fade quickly, while high-importance procedures persist for months.
+
+## Embedding providers
+
+Cerebro requires an embedding provider for vector search. Choose one at `cerebro init`:
+
+| Provider | Flag | Default model | Dimensions | Notes |
+|----------|------|---------------|------------|-------|
+| **Ollama** (local) | `--embed-provider ollama` | `nomic-embed-text` | 768 | Default. Requires [Ollama](https://ollama.com) running locally. |
+| **Voyage AI** (cloud) | `--embed-provider voyage` | `voyage-3.5` | 1024 | Set `CEREBRO_VOYAGE_API_KEY` env var. |
+| **None** (graph-only) | `--embed-provider none` | — | — | Disables vector search; graph and metadata only. |
+
+```bash
+# Local embeddings (default)
+cerebro init --embed-provider ollama
+
+# Cloud embeddings
+export CEREBRO_VOYAGE_API_KEY=your-key
+cerebro init --embed-provider voyage
+
+# No embeddings (graph-only mode)
+cerebro init --embed-provider none
+```
+
+## Project vs global store
+
+Each project gets its own brain, stored at `~/.cerebro/projects/<sha256-of-path>.sqlite`. You can also maintain a **global store** for cross-project knowledge:
+
+```bash
+# Initialize global store
+cerebro init --global
+
+# Promote a project memory to global
+cerebro promote <node-id> "Generalized version of this knowledge"
+
+# Recall with global fallback (project results weighted 1.0, global 0.7)
+cerebro recall --global "deployment patterns"
+```
 
 ## Claude Code integration
 
-`cerebro init` scaffolds everything needed for Claude Code:
+`cerebro init` scaffolds everything needed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
 
 - **Hooks** — automatic memory recall on session start, save reminders before compaction, GC on exit
-- **Skills** — `/remember` and `/recall` slash commands
+- **Skills** — `/remember`, `/recall`, and `/consolidate` slash commands
 - **CLAUDE.md** — project instructions for when/how to use memory
 
 This makes memory transparent to the agent — it just works across sessions without manual setup.
 
-## Go Library Usage
+Use `--skip-integration` to create only the database without Claude Code files. Use `--force` to update existing skill templates and CLAUDE.md section to the latest version.
+
+## Go library usage
 
 As of v1.2.0, `brain/` re-exports all types needed by external Go modules:
 
@@ -120,7 +172,7 @@ Constants: `brain.Episode`, `brain.Concept`, `brain.Procedure`, `brain.Reflectio
 
 ## Architecture
 
-Cerebro follows **Model B** (agent-managed memory): the AI agent decides what to store and retrieve. Cerebro is pure storage infrastructure with no LLM of its own. See [ADR-006](docs/adrs/adr-006-system-architecture-model-b.md) for the rationale.
+Cerebro follows **Model B** (agent-managed memory): the AI agent decides what to store and retrieve. Cerebro is pure storage infrastructure with no LLM of its own. See [ADR-006](docs/adrs/ADR-006-claude-code-integration-pattern.md) for the rationale.
 
 ```
 cmd/cerebro/       CLI (Cobra commands)
@@ -129,10 +181,13 @@ internal/store/    SQLite storage, schema, CRUD, vector search
 internal/embed/    Embedding provider interface + implementations
 ```
 
+Full architecture: [system-architecture.md](docs/architecture/system-architecture.md) | ADRs: [docs/adrs/](docs/adrs/)
+
 ## Development
 
 ```bash
 make build        # Build binary
+make install      # Build + install to /usr/local/bin
 make test         # Run tests with race detector
 make test-cover   # Tests + coverage report
 make lint         # golangci-lint
@@ -140,6 +195,8 @@ make clean        # Remove artifacts
 ```
 
 Pre-commit hooks: `pre-commit install` (requires [pre-commit](https://pre-commit.com/))
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow.
 
 ## License
 

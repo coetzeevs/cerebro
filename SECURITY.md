@@ -17,7 +17,7 @@ Cerebro supports external embedding providers (Voyage AI, Ollama). API keys for 
 - Are passed via `brain.EmbedConfig` at initialization time
 - Are stored in the brain's metadata table (SQLite) for reopening
 - Are **not** logged or included in export bundles
-- For CLI usage, should be set via environment variables (e.g., `VOYAGE_API_KEY`)
+- For CLI usage, should be set via environment variables (e.g., `CEREBRO_VOYAGE_API_KEY`)
 
 ### Export/Import
 

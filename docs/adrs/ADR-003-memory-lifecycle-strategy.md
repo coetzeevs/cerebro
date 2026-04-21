@@ -1,7 +1,7 @@
 # ADR-003: Memory Lifecycle and Eviction Strategy
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

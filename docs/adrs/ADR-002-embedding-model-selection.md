@@ -1,7 +1,7 @@
 # ADR-002: Embedding Strategy — Pluggable Provider with Local Default
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

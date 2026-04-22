@@ -26,6 +26,19 @@ var skillConsolidateTemplate []byte
 //go:embed templates/claudemd_section.md
 var claudeMDSectionTemplate []byte
 
+// marshalJSONNoEscape serializes v as indented JSON without escaping &, <, >.
+// Go's default encoder escapes these for HTML safety, which mangles shell commands.
+func marshalJSONNoEscape(v any) ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(v); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
 // scaffoldSettings creates or merges .claude/settings.json with cerebro hooks.
 // When force is true, existing cerebro hooks are replaced with the latest template.
 // Returns true if changes were made, false if cerebro hooks already present.
@@ -77,11 +90,10 @@ func scaffoldSettings(projectDir string, force bool) (bool, error) {
 		existingSettings = mergeHooks(existingSettings, templateSettings)
 	}
 
-	out, err := json.MarshalIndent(existingSettings, "", "  ")
+	out, err := marshalJSONNoEscape(existingSettings)
 	if err != nil {
 		return false, fmt.Errorf("marshaling merged settings: %w", err)
 	}
-	out = append(out, '\n')
 
 	if err := os.WriteFile(settingsPath, out, 0o644); err != nil { //nolint:gosec // settings.json needs to be readable
 		return false, fmt.Errorf("writing merged settings.json: %w", err)

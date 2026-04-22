@@ -636,6 +636,55 @@ func TestScaffoldCLAUDEMD_ForcePreservesTrailingSections(t *testing.T) {
 	}
 }
 
+func TestScaffoldSettings_NoHTMLEscaping(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	claudeDir := filepath.Join(projectDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write settings with old cerebro hooks containing shell operators
+	existing := map[string]any{
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "startup",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro recall 2>/dev/null && echo done"},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := scaffoldSettings(projectDir, true)
+	if err != nil {
+		t.Fatalf("scaffoldSettings: %v", err)
+	}
+
+	written, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(written)
+
+	// Shell operators must NOT be unicode-escaped
+	if strings.Contains(content, `\u003e`) {
+		t.Error("'>' was unicode-escaped to \\u003e — commands will be unreadable")
+	}
+	if strings.Contains(content, `\u0026`) {
+		t.Error("'&' was unicode-escaped to \\u0026 — commands will be unreadable")
+	}
+	if strings.Contains(content, `\u003c`) {
+		t.Error("'<' was unicode-escaped to \\u003c — commands will be unreadable")
+	}
+}
+
 func TestCheckOllama(t *testing.T) {
 	// This test just verifies the function doesn't panic.
 	// Actual ollama may or may not be installed.

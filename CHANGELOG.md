@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.2] - 2026-04-22
+
+### Bug Fixes
+- settings.json marshaling no longer unicode-escapes shell operators (`&`, `>`, `<`) making commands unreadable ([#28](https://github.com/coetzeevs/cerebro/pull/28))
+
 ## [1.6.1] - 2026-04-22
 
 ### Bug Fixes

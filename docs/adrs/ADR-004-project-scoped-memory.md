@@ -1,7 +1,7 @@
 # ADR-004: Project-Scoped Memory with Global Promotion
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

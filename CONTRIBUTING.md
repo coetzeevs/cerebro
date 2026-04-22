@@ -57,7 +57,7 @@ Prefix types: `feat`, `fix`, `docs`, `chore`, `test`, `refactor`
 ## Pull Requests
 
 1. One logical change per PR
-2. All CI checks must pass (lint, test, test-short, govulncheck, goreleaser check)
+2. All CI checks must pass (lint, test, goreleaser check)
 3. Update tests for any changed behavior
 4. Update documentation if the public API changes
 5. Keep PRs focused — don't bundle unrelated changes

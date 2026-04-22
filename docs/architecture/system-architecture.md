@@ -1,8 +1,8 @@
 # Cerebro: System Architecture
 
-> **Version:** 0.2.0 — Draft
-> **Date:** 2026-03-06
-> **Status:** Proposed
+> **Version:** 1.0.0
+> **Date:** 2026-03-06 (initial), 2026-04-21 (status update)
+> **Status:** Accepted
 > **Supersedes:** `docs/sqlit-graph-architecture.md` (initial musing)
 
 ---

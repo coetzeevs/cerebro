@@ -1,7 +1,7 @@
 # ADR-006: Claude Code as Primary Integration Target (Agent-Managed Memory)
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

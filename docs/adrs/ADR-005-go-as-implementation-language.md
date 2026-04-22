@@ -1,7 +1,7 @@
 # ADR-005: Go as Implementation Language
 
 ## Status
-Proposed
+Accepted
 
 ## Context
 

@@ -31,6 +31,9 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = b.Close() }()
 
+	applyConfigFlag(cmd, b.Store(), "limit", "search_limit")
+	applyConfigFlag(cmd, b.Store(), "threshold", "search_threshold")
+
 	results, err := b.Search(context.Background(), query, searchLimitFlag, searchThresholdFlag)
 	if err != nil {
 		return err

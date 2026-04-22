@@ -34,6 +34,8 @@ func runGC(cmd *cobra.Command, args []string) error {
 	}
 	defer func() { _ = b.Close() }()
 
+	applyConfigFlag(cmd, b.Store(), "threshold", "gc_threshold")
+
 	result, err := b.GC(gcThresholdFlag, gcDryRunFlag)
 	if err != nil {
 		return err

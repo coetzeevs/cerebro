@@ -128,6 +128,12 @@ func (s *Store) GetMeta(key string) (string, error) {
 	return value, nil
 }
 
+// DeleteMeta removes a key from schema_meta.
+func (s *Store) DeleteMeta(key string) error {
+	_, err := s.db.Exec(`DELETE FROM schema_meta WHERE key = ?`, key)
+	return err
+}
+
 // migrateSchema applies incremental schema migrations to an existing database.
 // It is called from Open() so that existing databases are upgraded on first access.
 // Each migration is guarded by a version check and wrapped in a transaction to

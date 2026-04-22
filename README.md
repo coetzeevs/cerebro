@@ -82,6 +82,7 @@ cerebro stats
 | `export` | Export brain (json, sql, or sqlite) |
 | `import` | Import memories from JSON export |
 | `backup` | Create a timestamped backup of the brain database |
+| `config` | View and modify brain configuration (set/get/list/reset) |
 | `stats` | Show brain health metrics |
 
 ## Memory types
@@ -145,6 +146,38 @@ cerebro recall --global "deployment patterns"
 This makes memory transparent to the agent — it just works across sessions without manual setup.
 
 Use `--skip-integration` to create only the database without Claude Code files. Use `--force` to replace existing hooks, skill templates, and CLAUDE.md section with the latest versions.
+
+## Configuration
+
+Each brain carries its own configuration, stored alongside memory data. Defaults work out of the box — configuration is opt-in.
+
+```bash
+# View all settings and their current values
+cerebro config list
+
+# Override a default
+cerebro config set prime_limit 30
+
+# Check a specific value
+cerebro config get prime_limit
+
+# Revert to the compiled default
+cerebro config reset prime_limit
+```
+
+**Precedence:** CLI flag (explicit) > brain config > compiled default.
+
+Available settings:
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `prime_limit` | 20 | Memories loaded at session start (`recall --prime`) |
+| `gc_threshold` | 0.01 | GC eviction threshold |
+| `search_limit` | 10 | Max results for the `search` command |
+| `search_threshold` | 0.7 | Min similarity for the `search` command |
+| `recall_threshold` | 0.3 | Min similarity for `recall` query mode |
+
+Config values travel with the brain — they are preserved across `export`/`import`.
 
 ## Go library usage
 

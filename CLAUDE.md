@@ -80,3 +80,5 @@ Use /recall when you:
 - Use `t.TempDir()` for test databases — no cleanup needed
 - Node types: `episode`, `concept`, `procedure`, `reflection`
 - Format flag: `--format md` (default) or `--format json`
+- Every PR must include a CHANGELOG.md entry in the same branch
+- Git tags must have a meaningful annotation summarizing the work shipped — don't just repeat the version number

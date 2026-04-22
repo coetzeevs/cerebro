@@ -27,8 +27,9 @@ var skillConsolidateTemplate []byte
 var claudeMDSectionTemplate []byte
 
 // scaffoldSettings creates or merges .claude/settings.json with cerebro hooks.
+// When force is true, existing cerebro hooks are replaced with the latest template.
 // Returns true if changes were made, false if cerebro hooks already present.
-func scaffoldSettings(projectDir string) (bool, error) {
+func scaffoldSettings(projectDir string, force bool) (bool, error) {
 	claudeDir := filepath.Join(projectDir, ".claude")
 	settingsPath := filepath.Join(claudeDir, "settings.json")
 
@@ -61,11 +62,15 @@ func scaffoldSettings(projectDir string) (bool, error) {
 		return false, fmt.Errorf("parsing existing settings.json: %w", err)
 	}
 
-	// If cerebro hooks exist, only add missing event types (upgrade path)
+	// If cerebro hooks exist, handle upgrade or force-replace
 	if strings.Contains(string(existingData), "cerebro") {
-		added := addMissingEvents(existingSettings, templateSettings)
-		if !added {
-			return false, nil
+		if force {
+			replaceCerebro(existingSettings, templateSettings)
+		} else {
+			added := addMissingEvents(existingSettings, templateSettings)
+			if !added {
+				return false, nil
+			}
 		}
 	} else {
 		// Fresh merge — no cerebro hooks yet
@@ -82,6 +87,49 @@ func scaffoldSettings(projectDir string) (bool, error) {
 		return false, fmt.Errorf("writing merged settings.json: %w", err)
 	}
 	return true, nil
+}
+
+// replaceCerebro removes cerebro hook entries from each event, then merges in the template.
+// Non-cerebro user hooks are preserved.
+func replaceCerebro(existing, template map[string]any) {
+	existingHooks, _ := existing["hooks"].(map[string]any)
+	templateHooks, _ := template["hooks"].(map[string]any)
+
+	if existingHooks == nil {
+		existingHooks = make(map[string]any)
+	}
+
+	// Strip cerebro entries from existing events
+	for event, eHooks := range existingHooks {
+		eArr, ok := eHooks.([]any)
+		if !ok {
+			continue
+		}
+		var kept []any
+		for _, entry := range eArr {
+			raw, _ := json.Marshal(entry)
+			if !strings.Contains(string(raw), "cerebro") {
+				kept = append(kept, entry)
+			}
+		}
+		if len(kept) > 0 {
+			existingHooks[event] = kept
+		} else {
+			delete(existingHooks, event)
+		}
+	}
+
+	// Merge template hooks into the cleaned settings
+	for event, tHooks := range templateHooks {
+		tArr, ok := tHooks.([]any)
+		if !ok {
+			continue
+		}
+		eArr, _ := existingHooks[event].([]any)
+		existingHooks[event] = append(eArr, tArr...)
+	}
+
+	existing["hooks"] = existingHooks
 }
 
 // addMissingEvents adds template event types that don't exist in the current settings.
@@ -190,14 +238,34 @@ func scaffoldCLAUDEMD(projectDir string, force bool) (bool, error) {
 
 	var content []byte
 	if hasMarker && force {
-		// Replace: keep everything before the marker, append new template
+		// Replace: keep everything before the marker, insert new template,
+		// then preserve any independent sections that follow.
 		idx := bytes.Index(existing, []byte(marker))
 		before := strings.TrimRight(string(existing[:idx]), "\n\r\t ")
+
+		// Find the end of the Cerebro section: the next "## " heading after the marker.
+		after := existing[idx+len(marker):]
+		var trailing []byte
+		if nextH2 := bytes.Index(after, []byte("\n## ")); nextH2 >= 0 {
+			trailing = after[nextH2+1:] // keep the "## " heading and everything after
+		}
+
 		content = []byte(before)
 		if len(content) > 0 {
 			content = append(content, '\n', '\n')
 		}
 		content = append(content, claudeMDSectionTemplate...)
+		if len(trailing) > 0 {
+			// Ensure one blank line between the template and the trailing section
+			if !bytes.HasSuffix(content, []byte("\n\n")) {
+				if bytes.HasSuffix(content, []byte("\n")) {
+					content = append(content, '\n')
+				} else {
+					content = append(content, '\n', '\n')
+				}
+			}
+			content = append(content, trailing...)
+		}
 	} else {
 		// Append (or create)
 		if len(existing) > 0 {

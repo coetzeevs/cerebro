@@ -144,7 +144,7 @@ cerebro recall --global "deployment patterns"
 
 This makes memory transparent to the agent — it just works across sessions without manual setup.
 
-Use `--skip-integration` to create only the database without Claude Code files. Use `--force` to update existing skill templates and CLAUDE.md section to the latest version.
+Use `--skip-integration` to create only the database without Claude Code files. Use `--force` to replace existing hooks, skill templates, and CLAUDE.md section with the latest versions.
 
 ## Go library usage
 

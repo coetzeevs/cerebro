@@ -62,6 +62,11 @@ Use /remember proactively when you:
 - Complete a significant task (capture the approach and outcome)
 - Are about to lose context (compaction warning, session ending)
 
+### Project directory
+When invoking cerebro commands directly (outside /recall and /remember skills),
+always pass `-p "$CLAUDE_PROJECT_DIR"` to ensure the correct brain is used.
+The `$CLAUDE_PROJECT_DIR` env var is set by Claude Code to the session start directory.
+
 ### When to recall
 Use /recall when you:
 - Start working on a new area of the codebase

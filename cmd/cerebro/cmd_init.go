@@ -34,7 +34,7 @@ Use --skip-integration to create only the database without integration files.`,
 	cmd.Flags().IntVar(&initEmbedDims, "embed-dims", 0, "Embedding dimensions (auto-detected from provider if 0)")
 	cmd.Flags().BoolVar(&initGlobalFlag, "global", false, "Initialize the global store (~/.cerebro/global.sqlite)")
 	cmd.Flags().BoolVar(&initSkipIntegration, "skip-integration", false, "Skip Claude Code integration file generation")
-	cmd.Flags().BoolVar(&initForceFlag, "force", false, "Overwrite existing skill files and CLAUDE.md section with latest templates")
+	cmd.Flags().BoolVar(&initForceFlag, "force", false, "Replace existing settings.json hooks, skill files, and CLAUDE.md section with latest templates")
 	rootCmd.AddCommand(cmd)
 }
 
@@ -97,11 +97,14 @@ func runInit(_ *cobra.Command, _ []string) error {
 	}
 
 	// Scaffold settings.json hooks
-	if settingsCreated, err := scaffoldSettings(projectDir); err != nil {
+	switch settingsCreated, err := scaffoldSettings(projectDir, initForceFlag); {
+	case err != nil:
 		fmt.Fprintf(os.Stderr, "Warning: could not scaffold settings.json: %v\n", err)
-	} else if settingsCreated && !quietFlag {
+	case settingsCreated && initForceFlag && !quietFlag:
+		fmt.Println("Updated .claude/settings.json (replaced cerebro hooks with latest)")
+	case settingsCreated && !quietFlag:
 		fmt.Println("Created .claude/settings.json (session hooks)")
-	} else if !settingsCreated && !quietFlag {
+	case !quietFlag:
 		fmt.Println("Skipped .claude/settings.json (cerebro hooks already present)")
 	}
 

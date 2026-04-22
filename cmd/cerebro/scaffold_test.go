@@ -15,7 +15,7 @@ func TestScaffoldSettings_NewFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldSettings(projectDir)
+	created, err := scaffoldSettings(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldSettings: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestScaffoldSettings_ExistingWithoutCerebro(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldSettings(projectDir)
+	created, err := scaffoldSettings(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldSettings: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestScaffoldSettings_AlreadyHasCerebro(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldSettings(projectDir)
+	created, err := scaffoldSettings(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldSettings: %v", err)
 	}
@@ -211,7 +211,7 @@ func TestScaffoldSettings_UpgradeAddsNewEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := scaffoldSettings(projectDir)
+	created, err := scaffoldSettings(projectDir, false)
 	if err != nil {
 		t.Fatalf("scaffoldSettings upgrade: %v", err)
 	}
@@ -454,6 +454,185 @@ func TestScaffoldCLAUDEMD_ForceReplacesSection(t *testing.T) {
 	// New template content should be present
 	if !strings.Contains(content, "### Project directory") {
 		t.Error("new template content missing (expected ### Project directory)")
+	}
+}
+
+func TestScaffoldSettings_ForceReplacesCerebro(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	claudeDir := filepath.Join(projectDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write settings with old cerebro hooks and a user hook
+	existing := map[string]any{
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "startup",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "echo user hook"},
+					},
+				},
+				map[string]any{
+					"matcher": "startup",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro recall --prime OLD"},
+					},
+				},
+			},
+			"SessionEnd": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro gc OLD"},
+					},
+				},
+			},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := scaffoldSettings(projectDir, true)
+	if err != nil {
+		t.Fatalf("scaffoldSettings with force: %v", err)
+	}
+	if !created {
+		t.Error("expected created=true when force=true replaces cerebro hooks")
+	}
+
+	merged, err := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(merged)
+
+	// Non-cerebro user hooks should be preserved
+	if !strings.Contains(content, "echo user hook") {
+		t.Error("user hook was clobbered during force replace")
+	}
+
+	// Old cerebro hooks should be gone
+	if strings.Contains(content, "OLD") {
+		t.Error("old cerebro hooks were NOT replaced")
+	}
+
+	// New template hooks should be present
+	var settings map[string]any
+	if err := json.Unmarshal(merged, &settings); err != nil {
+		t.Fatalf("invalid JSON: %v", err)
+	}
+	hooksMap, _ := settings["hooks"].(map[string]any)
+
+	// All template event types should exist
+	for _, event := range []string{"SessionStart", "UserPromptSubmit", "PreCompact", "PostCompact", "SessionEnd"} {
+		if _, ok := hooksMap[event]; !ok {
+			t.Errorf("missing hook event after force: %s", event)
+		}
+	}
+}
+
+func TestScaffoldSettings_NoForceSkipsCerebro(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	claudeDir := filepath.Join(projectDir, ".claude")
+	if err := os.MkdirAll(claudeDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write settings that already have ALL cerebro hook event types
+	existing := map[string]any{
+		"hooks": map[string]any{
+			"SessionStart": []any{
+				map[string]any{
+					"matcher": "startup",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro recall --prime OLD"},
+					},
+				},
+			},
+			"UserPromptSubmit": []any{
+				map[string]any{
+					"matcher": "",
+					"hooks": []any{
+						map[string]any{"type": "command", "command": "cerebro recall --prime OLD"},
+					},
+				},
+			},
+			"PreCompact":  []any{map[string]any{"matcher": "", "hooks": []any{map[string]any{"type": "command", "command": "echo cerebro precompact"}}}},
+			"PostCompact": []any{map[string]any{"matcher": "", "hooks": []any{map[string]any{"type": "command", "command": "echo cerebro postcompact"}}}},
+			"SessionEnd":  []any{map[string]any{"matcher": "", "hooks": []any{map[string]any{"type": "command", "command": "cerebro gc"}}}},
+		},
+	}
+	data, _ := json.MarshalIndent(existing, "", "  ")
+	if err := os.WriteFile(filepath.Join(claudeDir, "settings.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := scaffoldSettings(projectDir, false)
+	if err != nil {
+		t.Fatalf("scaffoldSettings: %v", err)
+	}
+	if created {
+		t.Error("expected created=false when force=false and all cerebro hooks present")
+	}
+
+	// Old hooks should remain unchanged
+	merged, _ := os.ReadFile(filepath.Join(claudeDir, "settings.json"))
+	if !strings.Contains(string(merged), "OLD") {
+		t.Error("hooks were changed without force=true")
+	}
+}
+
+func TestScaffoldCLAUDEMD_ForcePreservesTrailingSections(t *testing.T) {
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	if err := os.MkdirAll(projectDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write CLAUDE.md with a cerebro section followed by an independent section
+	existing := "# My Project\n\nSome instructions.\n\n## Cerebro Memory System\n\nOld cerebro content.\n\n## Conventions\n\n- Use t.TempDir()\n- Node types: episode, concept\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "CLAUDE.md"), []byte(existing), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := scaffoldCLAUDEMD(projectDir, true)
+	if err != nil {
+		t.Fatalf("scaffoldCLAUDEMD with force: %v", err)
+	}
+	if !created {
+		t.Error("expected created=true when force=true")
+	}
+
+	data, _ := os.ReadFile(filepath.Join(projectDir, "CLAUDE.md"))
+	content := string(data)
+
+	// Content before the cerebro section should be preserved
+	if !strings.Contains(content, "# My Project") {
+		t.Error("content before cerebro section was clobbered")
+	}
+
+	// Old cerebro content should be gone
+	if strings.Contains(content, "Old cerebro content") {
+		t.Error("old cerebro section content was NOT replaced")
+	}
+
+	// New template content should be present
+	if !strings.Contains(content, "### Project directory") {
+		t.Error("new template content missing")
+	}
+
+	// The independent section AFTER the cerebro section must be preserved
+	if !strings.Contains(content, "## Conventions") {
+		t.Error("trailing ## Conventions section was clobbered")
+	}
+	if !strings.Contains(content, "Use t.TempDir()") {
+		t.Error("trailing section content was clobbered")
 	}
 }
 

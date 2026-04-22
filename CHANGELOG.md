@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.1] - 2026-04-22
+
+### Bug Fixes
+- `--force` flag now replaces settings.json cerebro hooks with latest template (previously skipped) ([#27](https://github.com/coetzeevs/cerebro/pull/27))
+- `--force` CLAUDE.md replacement no longer destroys independent sections (e.g. `## Conventions`) that follow the Cerebro section ([#27](https://github.com/coetzeevs/cerebro/pull/27))
+- All skill templates (remember, recall, consolidate) now pass `-p "$CLAUDE_PROJECT_DIR"` to every cerebro command ([#27](https://github.com/coetzeevs/cerebro/pull/27))
+
+### Documentation
+- Add harness management research doc (`docs/research/harness-management-research.md`)
+
 ## [1.6.0] - 2026-04-22
 
 ### Features

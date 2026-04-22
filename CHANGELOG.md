@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-04-22
+
+### Features
+- `cerebro config` command for per-brain configuration (set/get/list/reset)
+- Brain-local config stored in `schema_meta` — no external config files needed
+- Config keys: `prime_limit`, `gc_threshold`, `search_limit`, `search_threshold`, `recall_threshold`
+- Precedence: CLI flag > brain config > compiled default
+- Config values travel with the brain via export/import
+- `recall` command now has `--threshold` / `-T` flag (was hardcoded at 0.3)
+- `cerebro init` output now includes a config hint
+
+### Miscellaneous
+- GC hook template no longer hardcodes `--threshold 0.01` — uses brain config or compiled default
+- Recall skill template no longer hardcodes `--limit 10` — uses brain config or compiled default
+- CLAUDE.md template updated with configuration section
+- `store.DeleteMeta()` method added for config reset support
+
 ## [1.6.2] - 2026-04-22
 
 ### Bug Fixes

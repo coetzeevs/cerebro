@@ -13,6 +13,7 @@ import (
 )
 
 var recallLimitFlag int
+var recallThresholdFlag float64
 var recallPrimeFlag bool
 var recallGlobalFlag bool
 
@@ -29,6 +30,7 @@ With --prime and a query, performs vector search with a low threshold.`,
 		RunE: runRecall,
 	}
 	cmd.Flags().IntVarP(&recallLimitFlag, "limit", "l", 20, "Maximum results")
+	cmd.Flags().Float64VarP(&recallThresholdFlag, "threshold", "T", 0.3, "Minimum similarity threshold for query mode")
 	cmd.Flags().BoolVar(&recallPrimeFlag, "prime", false, "Session-start mode: curated high-value selection")
 	cmd.Flags().BoolVar(&recallGlobalFlag, "global", false, "Query global store in addition to project store")
 	rootCmd.AddCommand(cmd)
@@ -46,6 +48,12 @@ func runRecall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	defer func() { _ = b.Close() }()
+
+	// Apply brain config: prime_limit for --prime mode, recall_threshold for query mode.
+	if recallPrimeFlag {
+		applyConfigFlag(cmd, b.Store(), "limit", "prime_limit")
+	}
+	applyConfigFlag(cmd, b.Store(), "threshold", "recall_threshold")
 
 	// Prime mode without query: MMR-based retrieval for diverse, surprise-aware
 	// session briefing. Falls back to stratified if MMR encounters an error.
@@ -67,9 +75,9 @@ func runRecall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("global store not initialized — run 'cerebro init --global' first: %w", globalErr)
 		}
 		defer func() { _ = global.Close() }()
-		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, 0.3, global)
+		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global)
 	} else {
-		results, err = b.Search(context.Background(), query, recallLimitFlag, 0.3)
+		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag)
 	}
 	if err != nil {
 		return err

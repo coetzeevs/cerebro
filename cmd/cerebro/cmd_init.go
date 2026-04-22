@@ -133,6 +133,12 @@ func runInit(_ *cobra.Command, _ []string) error {
 		fmt.Println("Skipped CLAUDE.md (Cerebro section already present, use --force to update)")
 	}
 
+	if !quietFlag {
+		fmt.Println()
+		fmt.Println("Tip: customize defaults with 'cerebro config set <key> <value>'.")
+		fmt.Println("     Run 'cerebro config list' to see available settings.")
+	}
+
 	// Check Ollama if using ollama provider
 	if initEmbedProvider == "ollama" {
 		model := initEmbedModel

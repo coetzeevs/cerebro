@@ -89,29 +89,47 @@ func TestInsertTurnMetrics(t *testing.T) {
 	}
 }
 
-func TestInsertTurnMetrics_Idempotent(t *testing.T) {
+func TestInsertTurnMetrics_ReplaceOnConflict(t *testing.T) {
 	s := testStore(t)
 
-	tm := TurnMetrics{
-		SessionID:  "test-session-1",
-		TurnNumber: 1,
-		Timestamp:  "2026-04-23T10:00:00Z",
+	// Insert a turn with initial data.
+	tm1 := TurnMetrics{
+		SessionID:   "test-session-1",
+		TurnNumber:  1,
+		Timestamp:   "2026-04-23T10:00:00Z",
+		InputTokens: 5000,
+		ToolReads:   2,
 	}
-
-	// Insert twice — should not error or duplicate.
-	if err := s.InsertTurnMetrics([]TurnMetrics{tm}); err != nil {
+	if err := s.InsertTurnMetrics([]TurnMetrics{tm1}); err != nil {
 		t.Fatalf("first insert: %v", err)
 	}
-	if err := s.InsertTurnMetrics([]TurnMetrics{tm}); err != nil {
+
+	// Re-insert the same turn with updated data (simulating a re-parse
+	// where the turn is now more complete).
+	tm2 := TurnMetrics{
+		SessionID:   "test-session-1",
+		TurnNumber:  1,
+		Timestamp:   "2026-04-23T10:00:00Z",
+		InputTokens: 8000,
+		ToolReads:   4,
+	}
+	if err := s.InsertTurnMetrics([]TurnMetrics{tm2}); err != nil {
 		t.Fatalf("second insert: %v", err)
 	}
 
+	// Should have 1 row with the UPDATED data (REPLACE semantics).
 	rows, err := s.QueryTurns(TurnFilter{SessionID: "test-session-1"})
 	if err != nil {
 		t.Fatalf("QueryTurns: %v", err)
 	}
 	if len(rows) != 1 {
-		t.Errorf("expected 1 row after duplicate insert, got %d", len(rows))
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	if rows[0].InputTokens != 8000 {
+		t.Errorf("InputTokens = %d, want 8000 (second insert should win)", rows[0].InputTokens)
+	}
+	if rows[0].ToolReads != 4 {
+		t.Errorf("ToolReads = %d, want 4 (second insert should win)", rows[0].ToolReads)
 	}
 }
 

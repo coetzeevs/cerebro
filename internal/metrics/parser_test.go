@@ -28,7 +28,7 @@ func testdataPath(t *testing.T, name string) string {
 
 func TestParseJSONL_SimpleSession(t *testing.T) {
 	path := testdataPath(t, "simple_session.jsonl")
-	result, _, err := ParseJSONL(path, 0)
+	result, _, err := ParseJSONL(path)
 	if err != nil {
 		t.Fatalf("ParseJSONL: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestParseJSONL_SimpleSession(t *testing.T) {
 
 func TestParseJSONL_ToolCalls(t *testing.T) {
 	path := testdataPath(t, "simple_session.jsonl")
-	result, _, err := ParseJSONL(path, 0)
+	result, _, err := ParseJSONL(path)
 	if err != nil {
 		t.Fatalf("ParseJSONL: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestParseJSONL_ToolCalls(t *testing.T) {
 
 func TestParseJSONL_ExcludesSidechains(t *testing.T) {
 	path := testdataPath(t, "sidechain_session.jsonl")
-	result, _, err := ParseJSONL(path, 0)
+	result, _, err := ParseJSONL(path)
 	if err != nil {
 		t.Fatalf("ParseJSONL: %v", err)
 	}
@@ -165,31 +165,102 @@ func TestParseJSONL_ExcludesSidechains(t *testing.T) {
 	}
 }
 
-func TestParseJSONL_IncrementalOffset(t *testing.T) {
+func TestParseJSONL_TurnNumbersAreSequential(t *testing.T) {
 	path := testdataPath(t, "simple_session.jsonl")
+	result, _, err := ParseJSONL(path)
+	if err != nil {
+		t.Fatalf("ParseJSONL: %v", err)
+	}
 
-	// First parse: get all data and the new offset.
-	result1, offset1, err := ParseJSONL(path, 0)
+	for i, turn := range result.Turns {
+		expected := i + 1
+		if turn.TurnNumber != expected {
+			t.Errorf("turn %d has TurnNumber=%d, want %d", i, turn.TurnNumber, expected)
+		}
+	}
+}
+
+func TestParseJSONL_ReturnsFileSize(t *testing.T) {
+	path := testdataPath(t, "simple_session.jsonl")
+	info, _ := os.Stat(path)
+
+	_, offset, err := ParseJSONL(path)
+	if err != nil {
+		t.Fatalf("ParseJSONL: %v", err)
+	}
+	if offset != info.Size() {
+		t.Errorf("offset = %d, want file size %d", offset, info.Size())
+	}
+}
+
+func TestParseJSONL_AppendedData(t *testing.T) {
+	// Copy the fixture to a temp file so we can append to it.
+	dir := t.TempDir()
+	path := filepath.Join(dir, "session.jsonl")
+
+	src := testdataPath(t, "simple_session.jsonl")
+	srcData, _ := os.ReadFile(src)
+	if err := os.WriteFile(path, srcData, 0o600); err != nil { //nolint:gosec // test file in t.TempDir()
+		t.Fatal(err)
+	}
+
+	// First parse: 3 turns.
+	result1, offset1, err := ParseJSONL(path)
 	if err != nil {
 		t.Fatalf("first parse: %v", err)
 	}
 	if len(result1.Turns) != 3 {
 		t.Fatalf("first parse: expected 3 turns, got %d", len(result1.Turns))
 	}
-	if offset1 == 0 {
-		t.Error("offset should be > 0 after parsing")
-	}
 
-	// Second parse from the offset: no new data.
-	result2, offset2, err := ParseJSONL(path, offset1)
+	// Append a new turn (user + assistant) to the file.
+	newTurn := `{"type":"user","uuid":"u4","timestamp":"2026-04-23T10:03:00Z","sessionId":"test-session-1","isSidechain":false,"message":{"role":"user","content":"Deploy it"}}` + "\n" +
+		`{"type":"assistant","uuid":"a5","parentUuid":"u4","timestamp":"2026-04-23T10:03:05Z","sessionId":"test-session-1","isSidechain":false,"message":{"role":"assistant","model":"claude-opus-4-6","stop_reason":"end_turn","content":[{"type":"tool_use","id":"t7","name":"Bash","input":{"command":"make deploy"}}],"usage":{"input_tokens":9000,"output_tokens":500,"cache_creation_input_tokens":0,"cache_read_input_tokens":8500}}}` + "\n"
+
+	f, _ := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
+	_, _ = f.WriteString(newTurn)
+	_ = f.Close()
+
+	// Second parse (full re-parse): should now have 4 turns with correct numbering.
+	result2, offset2, err := ParseJSONL(path)
 	if err != nil {
 		t.Fatalf("second parse: %v", err)
 	}
-	if len(result2.Turns) != 0 {
-		t.Errorf("second parse: expected 0 new turns, got %d", len(result2.Turns))
+	if len(result2.Turns) != 4 {
+		t.Fatalf("second parse: expected 4 turns, got %d", len(result2.Turns))
 	}
-	if offset2 != offset1 {
-		t.Errorf("offset should be unchanged: got %d, want %d", offset2, offset1)
+
+	// Verify turn numbers are sequential 1-4.
+	for i, turn := range result2.Turns {
+		expected := i + 1
+		if turn.TurnNumber != expected {
+			t.Errorf("turn %d has TurnNumber=%d, want %d", i, turn.TurnNumber, expected)
+		}
+	}
+
+	// Offset should be larger than before (file grew).
+	if offset2 <= offset1 {
+		t.Errorf("offset should have grown: %d <= %d", offset2, offset1)
+	}
+
+	// New turn should have correct data.
+	turn4 := result2.Turns[3]
+	if turn4.ToolBash != 1 {
+		t.Errorf("turn4 tool_bash = %d, want 1", turn4.ToolBash)
+	}
+}
+
+func TestParseResult_SessionIDs(t *testing.T) {
+	result := ParseResult{
+		Turns: []TurnMetrics{
+			{SessionID: "s1", TurnNumber: 1},
+			{SessionID: "s1", TurnNumber: 2},
+			{SessionID: "s2", TurnNumber: 1},
+		},
+	}
+	ids := result.SessionIDs()
+	if len(ids) != 2 {
+		t.Fatalf("expected 2 session IDs, got %d", len(ids))
 	}
 }
 
@@ -200,7 +271,7 @@ func TestParseJSONL_EmptyFile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	result, _, err := ParseJSONL(path, 0)
+	result, _, err := ParseJSONL(path)
 	if err != nil {
 		t.Fatalf("ParseJSONL empty: %v", err)
 	}

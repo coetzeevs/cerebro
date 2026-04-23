@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.1] - 2026-04-23
+
+### Bug Fixes
+- Fix silent data loss in incremental JSONL parsing: turn counter reset to 0 on each parse, causing `INSERT OR IGNORE` to silently drop new turns that collided with existing turn numbers
+- Replace `INSERT OR IGNORE` with `INSERT OR REPLACE` for turn_metrics so re-parsing growing sessions overwrites partial turns with complete data
+- Delete and re-insert tool_calls per session on re-parse to prevent duplicate accumulation
+- Eliminate offset-based incremental seeking (premature optimization that caused partial-line boundary issues); always parse from byte 0, use file size only for change detection
+
 ## [1.9.0] - 2026-04-23
 
 ### Features

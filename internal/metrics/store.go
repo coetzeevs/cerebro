@@ -87,7 +87,8 @@ func (s *MetricsStore) DB() *sql.DB {
 	return s.db
 }
 
-// InsertTurnMetrics inserts turn metrics rows. Uses INSERT OR IGNORE for idempotency.
+// InsertTurnMetrics inserts turn metrics rows. Uses INSERT OR REPLACE so that
+// re-parsing a growing session file overwrites partial turns with complete data.
 func (s *MetricsStore) InsertTurnMetrics(rows []TurnMetrics) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -95,7 +96,7 @@ func (s *MetricsStore) InsertTurnMetrics(rows []TurnMetrics) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	stmt, err := tx.Prepare(`INSERT OR IGNORE INTO turn_metrics (
+	stmt, err := tx.Prepare(`INSERT OR REPLACE INTO turn_metrics (
 		session_id, turn_number, timestamp,
 		input_tokens, output_tokens, cache_read_tokens, cache_create_tokens,
 		thinking_chars, thinking_blocks,

@@ -28,6 +28,10 @@
           {
             "command": "cerebro gc --log \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true",
             "type": "command"
+          },
+          {
+            "command": "cerebro ingest -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true",
+            "type": "command"
           }
         ],
         "matcher": ""
@@ -73,6 +77,17 @@
           }
         ],
         "matcher": "clear"
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "cat | cerebro stop-guard -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true",
+            "type": "command"
+          }
+        ],
+        "matcher": ""
       }
     ],
     "UserPromptSubmit": [

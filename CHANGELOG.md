@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.0] - 2026-04-23
+
+### Features
+- `cerebro stats --metrics` shows inline Unicode sparklines for per-turn quality signals
+  - Read:Edit ratio, thinking depth, cache hit rate, stop-guard fires
+  - Summary line with aggregate stats (avg R:E, zero-think %, cache %, stops blocked)
+  - `--last N` flag controls how many recent turns to display (default 50)
+- Sparkline renderer (`internal/metrics/sparkline.go`) — reusable Unicode block character renderer for both CLI and future dashboard
+
 ## [1.9.1] - 2026-04-23
 
 ### Bug Fixes

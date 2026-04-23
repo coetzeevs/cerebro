@@ -82,6 +82,10 @@
           {
             "type": "command",
             "command": "cerebro gc --log \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"
+          },
+          {
+            "type": "command",
+            "command": "cerebro ingest -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"
           }
         ]
       }

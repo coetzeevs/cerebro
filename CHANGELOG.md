@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.9.0] - 2026-04-23
+
+### Features
+- `cerebro ingest` command for collecting per-turn performance metrics from Claude Code session files
+  - Parses JSONL session files incrementally (byte offset tracking, idempotent)
+  - Extracts per-turn: tool usage, token consumption, thinking depth, cerebro operations
+  - Per-tool-call detail table for full analytical flexibility (tool name, file path, cerebro op)
+  - Separate metrics database (`~/.cerebro/projects/<hash>.metrics.sqlite`) — isolated from brain data
+  - Auto-discovers Claude Code session directory from project path
+- `evalStopGuard` now returns matched category name for metrics correlation
+- SessionEnd hook template updated to run `cerebro ingest` automatically after GC
+
+### Miscellaneous
+- New `internal/metrics/` package: store, schema, types, JSONL parser, tool classification
+- Test fixtures for JSONL parsing in `internal/metrics/testdata/`
+
 ## [1.8.0] - 2026-04-23
 
 ### Features

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"regexp"
 )
@@ -15,21 +14,28 @@ type ParseResult struct {
 	ToolCalls []ToolCall
 }
 
-// ParseJSONL reads a JSONL file starting from the given byte offset and
-// returns extracted turn metrics, tool call details, and the new byte offset.
-func ParseJSONL(filePath string, fromOffset int64) (ParseResult, int64, error) {
+// SessionIDs returns the distinct session IDs found in the parsed turns.
+func (r *ParseResult) SessionIDs() []string {
+	seen := make(map[string]bool)
+	var ids []string
+	for i := range r.Turns {
+		if !seen[r.Turns[i].SessionID] {
+			seen[r.Turns[i].SessionID] = true
+			ids = append(ids, r.Turns[i].SessionID)
+		}
+	}
+	return ids
+}
+
+// ParseJSONL reads a JSONL file from the beginning and returns extracted
+// turn metrics, tool call details, and the file size (for change detection).
+// Always parses from byte 0 to ensure correct turn numbering.
+func ParseJSONL(filePath string) (ParseResult, int64, error) {
 	f, err := os.Open(filePath)
 	if err != nil {
 		return ParseResult{}, 0, fmt.Errorf("opening %s: %w", filePath, err)
 	}
 	defer func() { _ = f.Close() }()
-
-	// Seek to offset for incremental parsing.
-	if fromOffset > 0 {
-		if _, err := f.Seek(fromOffset, io.SeekStart); err != nil {
-			return ParseResult{}, fromOffset, fmt.Errorf("seeking to offset %d: %w", fromOffset, err)
-		}
-	}
 
 	scanner := bufio.NewScanner(f)
 	// Increase buffer for large JSONL lines (some can be several KB).
@@ -89,24 +95,13 @@ func ParseJSONL(filePath string, fromOffset int64) (ParseResult, int64, error) {
 		result.ToolCalls = append(result.ToolCalls, currentTurn.toolCalls...)
 	}
 
-	// Compute new offset.
-	pos, _ := f.Seek(0, io.SeekCurrent)
-	// Account for scanner having read ahead.
-	// The actual position is: fromOffset + bytes scanned.
-	// Since we used Seek before scanning, pos reflects the file position after scanning.
-	// However, bufio.Scanner may have read ahead. Use the file stat to get the final offset.
+	// Return file size as the offset (used for change detection by the caller).
 	info, err := f.Stat()
 	if err != nil {
-		return result, pos, nil
-	}
-	// If we read to the end, use file size as offset.
-	newOffset := info.Size()
-	if fromOffset > 0 && len(result.Turns) == 0 && len(result.ToolCalls) == 0 {
-		// No new data found — return the original offset.
-		newOffset = fromOffset
+		return result, 0, fmt.Errorf("stat %s: %w", filePath, err)
 	}
 
-	return result, newOffset, scanner.Err()
+	return result, info.Size(), scanner.Err()
 }
 
 // --- Internal types for JSONL parsing ---

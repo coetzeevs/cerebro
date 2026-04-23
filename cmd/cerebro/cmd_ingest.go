@@ -65,40 +65,53 @@ func runIngest(cmd *cobra.Command, args []string) error {
 	var totalTurns, totalToolCalls, filesProcessed int
 
 	for _, file := range files {
-		var fromOffset int64
+		// Check if file has grown since last ingest.
+		info, err := os.Stat(file)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: cannot stat %s: %v\n", filepath.Base(file), err)
+			continue
+		}
 		if !ingestForceFlag {
 			state, err := store.GetIngestState(file)
 			if err != nil {
 				return fmt.Errorf("reading ingest state for %s: %w", file, err)
 			}
-			fromOffset = state.LastOffset
+			if state.LastOffset >= info.Size() {
+				continue // file hasn't grown since last ingest
+			}
 		}
 
-		result, newOffset, err := metrics.ParseJSONL(file, fromOffset)
+		// Always parse from beginning for correct turn numbering.
+		result, newOffset, err := metrics.ParseJSONL(file)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to parse %s: %v\n", filepath.Base(file), err)
 			continue
 		}
 
-		if len(result.Turns) == 0 && len(result.ToolCalls) == 0 {
+		if len(result.Turns) == 0 {
 			continue
 		}
 
-		// Insert turn metrics.
-		if len(result.Turns) > 0 {
-			if err := store.InsertTurnMetrics(result.Turns); err != nil {
-				return fmt.Errorf("inserting turn metrics: %w", err)
+		// Delete existing tool_calls for sessions in this file before re-inserting.
+		for _, sid := range result.SessionIDs() {
+			if err := store.DeleteToolCallsForSession(sid); err != nil {
+				return fmt.Errorf("clearing tool calls for session %s: %w", sid[:8], err)
 			}
 		}
 
-		// Insert tool call details.
+		// INSERT OR REPLACE turn metrics (latest parse wins for growing sessions).
+		if err := store.InsertTurnMetrics(result.Turns); err != nil {
+			return fmt.Errorf("inserting turn metrics: %w", err)
+		}
+
+		// Insert fresh tool call details.
 		if len(result.ToolCalls) > 0 {
 			if err := store.InsertToolCalls(result.ToolCalls); err != nil {
 				return fmt.Errorf("inserting tool calls: %w", err)
 			}
 		}
 
-		// Update ingest state.
+		// Update ingest state to current file size.
 		if err := store.SetIngestState(file, newOffset); err != nil {
 			return fmt.Errorf("updating ingest state: %w", err)
 		}

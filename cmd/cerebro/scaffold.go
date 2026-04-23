@@ -23,6 +23,9 @@ var skillRecallTemplate []byte
 //go:embed templates/skill_consolidate.md
 var skillConsolidateTemplate []byte
 
+//go:embed templates/skill_develop.md
+var skillDevelopTemplate []byte
+
 //go:embed templates/claudemd_section.md
 var claudeMDSectionTemplate []byte
 
@@ -204,6 +207,7 @@ func scaffoldSkills(projectDir string, force bool) (int, error) {
 		"remember":    skillRememberTemplate,
 		"recall":      skillRecallTemplate,
 		"consolidate": skillConsolidateTemplate,
+		"develop":     skillDevelopTemplate,
 	}
 
 	created := 0

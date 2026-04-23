@@ -85,6 +85,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cat | cerebro stop-guard -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"
+          }
+        ]
+      }
     ]
   }
 }

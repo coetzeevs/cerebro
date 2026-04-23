@@ -22,7 +22,8 @@ decision to stdout.
 Designed to run as a Stop hook command in .claude/settings.json.
 Uses exit 0 + JSON decision protocol (omits decision field to allow stopping).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return evalStopGuard(os.Stdin, os.Stdout)
+			_, err := evalStopGuard(os.Stdin, os.Stdout)
+			return err
 		},
 		SilenceUsage: true,
 	}
@@ -69,10 +70,11 @@ var stopCategories = []phraseCategory{
 
 // evalStopGuard reads hook input from r, evaluates the last assistant message
 // against known premature-stop patterns, and writes a JSON decision to w.
-func evalStopGuard(r io.Reader, w io.Writer) error {
+// Returns the matched category name (empty string if no match / allowed).
+func evalStopGuard(r io.Reader, w io.Writer) (string, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
-		return fmt.Errorf("reading stdin: %w", err)
+		return "", fmt.Errorf("reading stdin: %w", err)
 	}
 
 	// Parse input — gracefully handle empty or malformed JSON.
@@ -90,11 +92,11 @@ func evalStopGuard(r io.Reader, w io.Writer) error {
 				Decision: "block",
 				Reason:   cat.Reason,
 			}
-			return json.NewEncoder(w).Encode(decision)
+			return cat.Name, json.NewEncoder(w).Encode(decision)
 		}
 	}
 
 	// No match — allow stopping by omitting the decision field.
 	_, err = fmt.Fprintln(w, "{}")
-	return err
+	return "", err
 }

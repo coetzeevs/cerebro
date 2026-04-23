@@ -163,7 +163,7 @@ func makeStopInput(message string) []byte {
 func runStopGuardRaw(t *testing.T, input []byte) []byte {
 	t.Helper()
 	var out bytes.Buffer
-	err := evalStopGuard(bytes.NewReader(input), &out)
+	_, err := evalStopGuard(bytes.NewReader(input), &out)
 	if err != nil {
 		t.Fatalf("evalStopGuard error: %v", err)
 	}

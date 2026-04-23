@@ -10,7 +10,7 @@ allowed-tools: Bash(cerebro *)
 Retrieve relevant memories from Cerebro:
 
 ```bash
-cerebro recall "$ARGUMENTS" --limit 10 --format md -p "$CLAUDE_PROJECT_DIR"
+cerebro recall "$ARGUMENTS" --format md -p "$CLAUDE_PROJECT_DIR"
 ```
 
 Review the retrieved memories and integrate them into your understanding of the current context.

@@ -74,6 +74,10 @@ Use /recall when you:
 - Want to check if a similar problem was encountered before
 - Need to understand project conventions for an unfamiliar area
 
+### Configuration
+Per-brain defaults can be customized with `cerebro config set <key> <value>`.
+Run `cerebro config list` to see available settings. CLI flags always override brain config.
+
 ## Conventions
 
 - Keep test fixtures in `testdata/` directories

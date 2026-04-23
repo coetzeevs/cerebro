@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-04-23
+
+### Features
+- `cerebro stop-guard` subcommand for Stop hook quality enforcement
+  - Reads Claude Code Stop hook JSON from stdin, checks `last_assistant_message` against phrase patterns
+  - Three phrase categories with specific corrective guidance: permission-seeking, premature-stopping, scope-reduction
+  - Uses JSON decision protocol (exit 0 + `{"decision": "block", "reason": "..."}`)
+  - Cross-platform Go implementation — no shell/python dependencies
+- `/develop` skill template scaffolded by `cerebro init`
+  - 5-phase structured workflow: context, research, plan (approval gate), execute, verify
+  - `effort: high` frontmatter forces deep reasoning when skill is active
+  - Universal — no project-specific dependencies (Jira, swarm agents, etc.)
+- Stop hook added to settings.json template — auto-added to existing projects on next `cerebro init`
+
 ## [1.7.0] - 2026-04-22
 
 ### Features

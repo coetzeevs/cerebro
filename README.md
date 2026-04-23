@@ -83,6 +83,7 @@ cerebro stats
 | `import` | Import memories from JSON export |
 | `backup` | Create a timestamped backup of the brain database |
 | `config` | View and modify brain configuration (set/get/list/reset) |
+| `stop-guard` | Evaluate Stop hook input for premature stopping patterns |
 | `stats` | Show brain health metrics |
 
 ## Memory types
@@ -139,8 +140,8 @@ cerebro recall --global "deployment patterns"
 
 `cerebro init` scaffolds everything needed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
 
-- **Hooks** — automatic memory recall on session start, save reminders before compaction, GC on exit
-- **Skills** — `/remember`, `/recall`, and `/consolidate` slash commands
+- **Hooks** — memory recall on session start, GC on exit, stop-guard to prevent premature stopping
+- **Skills** — `/remember`, `/recall`, `/consolidate`, and `/develop` (structured implementation workflow)
 - **CLAUDE.md** — project instructions for when/how to use memory
 
 This makes memory transparent to the agent — it just works across sessions without manual setup.

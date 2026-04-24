@@ -85,6 +85,7 @@ cerebro stats
 | `config` | View and modify brain configuration (set/get/list/reset) |
 | `stop-guard` | Evaluate Stop hook input for premature stopping patterns |
 | `ingest` | Parse Claude Code session files and collect per-turn performance metrics |
+| `dashboard` | Interactive full-screen performance metrics TUI with live refresh |
 | `stats` | Show brain health metrics (add `--metrics` for session sparklines) |
 
 ## Memory types

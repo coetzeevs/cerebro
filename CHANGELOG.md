@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.11.0] - 2026-04-24
+
+### Features
+- `cerebro dashboard` — interactive full-screen performance metrics TUI
+  - Overview panel: session summary, quality sparklines (R:E, thinking, cache, stop-guard), brain health
+  - Turns panel: scrollable table of per-turn metrics with anomaly highlighting
+  - Live refresh every 5 seconds via incremental JSONL re-parse
+  - Tab navigation (1-5), keyboard controls (j/k scroll, r refresh, q quit)
+  - Alt-screen mode (full terminal takeover, clean restore on exit)
+  - Placeholder panels for Detail, Tools, and Trends (coming in next release)
+- Bubble Tea v2 ecosystem added (bubbletea v2.0.6, lipgloss v2.0.3, bubbles v2.1.0)
+- New `internal/dashboard/` package
+
+### Miscellaneous
+- Binary size increase: 13MB → 15MB (Charm stack is pure Go, no CGO)
+
 ## [1.10.1] - 2026-04-24
 
 ### Bug Fixes

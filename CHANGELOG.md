@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.12.0] - 2026-04-24
+
+### Features
+- Dashboard Detail panel (3): full metrics for selected turn, quality flags, individual tool calls
+  - Select a turn from Turns panel and press Enter to view
+  - Quality flags: [!] ZERO THINKING, [!] EDIT WITHOUT READS, [!] STOP GUARD FIRED
+  - Shows individual tool calls with file paths and cerebro operations
+- Dashboard Tools panel (4): tool distribution bar chart with percentages, cerebro operations breakdown
+- Dashboard Trends panel (5): daily sparklines (R:E, zero-think %, cache hit %, stop-guard, turn volume) + 14-day summary table
+- New store methods: `ToolDistribution()`, `ToolCallsForTurn()`
+
 ## [1.11.0] - 2026-04-24
 
 ### Features
@@ -11,7 +22,6 @@ All notable changes to this project will be documented in this file.
   - Live refresh every 5 seconds via incremental JSONL re-parse
   - Tab navigation (1-5), keyboard controls (j/k scroll, r refresh, q quit)
   - Alt-screen mode (full terminal takeover, clean restore on exit)
-  - Placeholder panels for Detail, Tools, and Trends (coming in next release)
 - Bubble Tea v2 ecosystem added (bubbletea v2.0.6, lipgloss v2.0.3, bubbles v2.1.0)
 - New `internal/dashboard/` package
 

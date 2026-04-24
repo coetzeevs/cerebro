@@ -38,13 +38,19 @@ type Model struct {
 	height    int
 
 	// Data.
-	turns    []metrics.TurnMetrics
-	overview OverviewData
-	table    table.Model
+	turns      []metrics.TurnMetrics
+	overview   OverviewData
+	table      table.Model
+	toolsDist  map[string]int
+	toolsData  ToolsData
+	trendsData TrendsData
 
 	// State.
-	err        error
-	lastIngest time.Time
+	selectedTurn  *metrics.TurnMetrics
+	selectedIdx   int
+	turnToolCalls []metrics.ToolCall
+	err           error
+	lastIngest    time.Time
 }
 
 // New creates a new dashboard model.
@@ -94,6 +100,22 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocritic // t
 			m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
 		case "r":
 			return m, m.loadData
+		case "enter":
+			// Select turn for detail view.
+			if m.activeTab == tabTurns && len(m.turns) > 0 {
+				cursor := m.table.Cursor()
+				if cursor >= 0 && cursor < len(m.turns) {
+					m.selectedIdx = cursor
+					m.selectedTurn = &m.turns[cursor]
+					// Load tool calls for this turn.
+					if m.config.MetricsStore != nil {
+						calls, _ := m.config.MetricsStore.ToolCallsForTurn(
+							m.selectedTurn.SessionID, m.selectedTurn.TurnNumber)
+						m.turnToolCalls = calls
+					}
+					m.activeTab = tabDetail
+				}
+			}
 		default:
 			// Forward to active panel.
 			if m.activeTab == tabTurns {
@@ -107,6 +129,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) { //nolint:gocritic // t
 	case dataLoadedMsg:
 		m.turns = msg.turns
 		m.overview = msg.overview
+		m.toolsDist = msg.toolsDist
+		m.toolsData = ComputeToolsData(m.turns, m.toolsDist)
+		m.trendsData = ComputeTrendsData(m.turns)
 		m.lastIngest = time.Now()
 		if m.width > 0 {
 			m.table = BuildTurnsTable(m.turns, m.width, m.height-4)
@@ -152,10 +177,12 @@ func (m Model) View() tea.View { //nolint:gocritic // tea.Model requires value r
 		b.WriteString(RenderOverview(&m.overview, m.width, contentHeight))
 	case tabTurns:
 		b.WriteString(m.table.View())
-	case tabDetail, tabTools, tabTrends:
-		b.WriteString(contentStyle.Render(
-			fmt.Sprintf("\n  Panel %d (%s) — coming in next release.\n\n  Use Overview (1) and Turns (2) panels.",
-				m.activeTab+1, tabNames[m.activeTab])))
+	case tabDetail:
+		b.WriteString(RenderDetail(m.selectedTurn, m.turnToolCalls, m.width, contentHeight))
+	case tabTools:
+		b.WriteString(RenderTools(&m.toolsData, m.width, contentHeight))
+	case tabTrends:
+		b.WriteString(RenderTrends(&m.trendsData, m.width, contentHeight))
 	}
 
 	// Error display.
@@ -204,8 +231,9 @@ func (m Model) renderTabBar() string { //nolint:gocritic // used by View()
 // --- Messages ---
 
 type dataLoadedMsg struct {
-	turns    []metrics.TurnMetrics
-	overview OverviewData
+	turns     []metrics.TurnMetrics
+	overview  OverviewData
+	toolsDist map[string]int
 }
 
 type errMsg struct {
@@ -258,9 +286,13 @@ func (m Model) loadData() tea.Msg { //nolint:gocritic // tea.Cmd function
 		}
 	}
 
+	// Tool distribution.
+	toolsDist, _ := m.config.MetricsStore.ToolDistribution("")
+
 	return dataLoadedMsg{
-		turns:    turns,
-		overview: overview,
+		turns:     turns,
+		overview:  overview,
+		toolsDist: toolsDist,
 	}
 }
 

@@ -246,6 +246,57 @@ func (s *MetricsStore) DeleteToolCallsForSession(sessionID string) error {
 	return err
 }
 
+// ToolDistribution returns tool call counts grouped by tool name.
+func (s *MetricsStore) ToolDistribution(sessionID string) (map[string]int, error) {
+	query := `SELECT tool_name, COUNT(*) FROM tool_calls`
+	var args []any
+	if sessionID != "" {
+		query += " WHERE session_id = ?"
+		args = append(args, sessionID)
+	}
+	query += " GROUP BY tool_name ORDER BY COUNT(*) DESC"
+
+	rows, err := s.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]int)
+	for rows.Next() {
+		var name string
+		var count int
+		if err := rows.Scan(&name, &count); err != nil {
+			return nil, err
+		}
+		result[name] = count
+	}
+	return result, rows.Err()
+}
+
+// ToolCallsForTurn returns all tool calls for a specific turn.
+func (s *MetricsStore) ToolCallsForTurn(sessionID string, turnNumber int) ([]ToolCall, error) {
+	rows, err := s.db.Query(
+		`SELECT id, session_id, turn_number, timestamp, tool_name, file_path, cerebro_op
+		 FROM tool_calls WHERE session_id = ? AND turn_number = ? ORDER BY timestamp`,
+		sessionID, turnNumber,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	var result []ToolCall
+	for rows.Next() {
+		var tc ToolCall
+		if err := rows.Scan(&tc.ID, &tc.SessionID, &tc.TurnNumber, &tc.Timestamp, &tc.ToolName, &tc.FilePath, &tc.CerebroOp); err != nil {
+			return nil, err
+		}
+		result = append(result, tc)
+	}
+	return result, rows.Err()
+}
+
 // DistinctSessions returns all unique session IDs that have a given turn already ingested.
 func (s *MetricsStore) DistinctSessions() (map[string]int, error) {
 	rows, err := s.db.Query(`SELECT session_id, MAX(turn_number) FROM turn_metrics GROUP BY session_id`)

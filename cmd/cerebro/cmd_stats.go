@@ -85,30 +85,40 @@ func runStats(cmd *cobra.Command, args []string) error {
 }
 
 func renderMetricsSparklines(turns []metrics.TurnMetrics) {
-	// Extract time-series for each metric.
-	readEdit := make([]float64, len(turns))
-	thinking := make([]float64, len(turns))
-	cacheHit := make([]float64, len(turns))
-	stopFired := make([]bool, len(turns))
+	n := len(turns)
 
-	var totalReads, totalEdits, zeroThink, totalStops int
+	// Extract per-turn time-series.
+	perTurnRE := make([]float64, n)
+	thinkingBlocks := make([]bool, n)
+	thinkingChars := make([]float64, n)
+	cacheHit := make([]float64, n)
+	stopFired := make([]bool, n)
+
+	var totalReads, totalEdits, noThinkTurns, totalStops int
+	var hasAnyThinkingChars bool
 	var cacheHitSum float64
 	cacheHitCount := 0
 
 	for i := range turns {
 		t := &turns[i]
-		// Read:Edit ratio — use raw value, 0 if no edits.
+
+		// Per-turn R:E ratio (sparse — reads and edits rarely co-occur in one turn).
 		if t.ReadEditRatio != nil {
-			readEdit[i] = *t.ReadEditRatio
+			perTurnRE[i] = *t.ReadEditRatio
 		}
 
-		// Thinking chars.
-		thinking[i] = float64(t.ThinkingChars)
-		if t.ThinkingChars == 0 {
-			zeroThink++
+		// Thinking: blocks (boolean) and chars (depth when visible).
+		if t.ThinkingBlocks > 0 {
+			thinkingBlocks[i] = true
+		} else {
+			noThinkTurns++
+		}
+		thinkingChars[i] = float64(t.ThinkingChars)
+		if t.ThinkingChars > 0 {
+			hasAnyThinkingChars = true
 		}
 
-		// Cache hit rate: cache_read / (input + cache_read + cache_create).
+		// Cache hit rate.
 		total := t.InputTokens + t.CacheReadTokens + t.CacheCreateTokens
 		if total > 0 {
 			rate := float64(t.CacheReadTokens) / float64(total)
@@ -127,13 +137,20 @@ func renderMetricsSparklines(turns []metrics.TurnMetrics) {
 		totalEdits += t.ToolEdits
 	}
 
+	// Windowed R:E ratio (10-turn sliding window captures cross-turn read-then-edit pattern).
+	windowRE := windowedReadEditRatio(turns, 10)
+
 	width := 50
 
-	fmt.Printf("\n## Session Metrics (last %d turns)\n\n", len(turns))
-	fmt.Printf("  Read:Edit  %s\n", metrics.Sparkline(readEdit, width))
-	fmt.Printf("  Thinking   %s\n", metrics.Sparkline(thinking, width))
-	fmt.Printf("  Cache Hit  %s\n", metrics.Sparkline(cacheHit, width))
-	fmt.Printf("  Stop Guard %s\n", metrics.BoolSparkline(stopFired, width, '*'))
+	fmt.Printf("\n## Session Metrics (last %d turns)\n\n", n)
+	fmt.Printf("  R:E          %s\n", metrics.Sparkline(perTurnRE, width))
+	fmt.Printf("  R:E (w10)    %s\n", metrics.Sparkline(windowRE, width))
+	fmt.Printf("  Thinking     %s\n", metrics.BoolSparkline(thinkingBlocks, width, '^'))
+	if hasAnyThinkingChars {
+		fmt.Printf("  Think Depth  %s\n", metrics.Sparkline(thinkingChars, width))
+	}
+	fmt.Printf("  Cache Hit    %s\n", metrics.Sparkline(cacheHit, width))
+	fmt.Printf("  Stop Guard   %s\n", metrics.BoolSparkline(stopFired, width, '*'))
 	fmt.Println()
 
 	// Summary line.
@@ -141,12 +158,40 @@ func renderMetricsSparklines(turns []metrics.TurnMetrics) {
 	if totalEdits > 0 {
 		avgRE = float64(totalReads) / float64(totalEdits)
 	}
-	zeroPct := float64(zeroThink) / float64(len(turns)) * 100
+
+	thinkActive := n - noThinkTurns
+	thinkPct := float64(thinkActive) / float64(n) * 100
+	thinkLabel := fmt.Sprintf("Think: %.0f%% active", thinkPct)
+	if thinkActive > 0 && !hasAnyThinkingChars {
+		thinkLabel += " (redacted)"
+	}
+
 	avgCache := float64(0)
 	if cacheHitCount > 0 {
 		avgCache = cacheHitSum / float64(cacheHitCount) * 100
 	}
 
-	fmt.Printf("  R:E: %.1f  Zero-think: %.0f%%  Cache: %.0f%%  Stops blocked: %d\n",
-		avgRE, zeroPct, avgCache, totalStops)
+	fmt.Printf("  R:E: %.1f  %s  Cache: %.0f%%  Stops: %d\n",
+		avgRE, thinkLabel, avgCache, totalStops)
+}
+
+// windowedReadEditRatio computes a sliding-window Read:Edit ratio from per-turn tool counts.
+// For each position i, it sums reads and edits over the window [i-window+1 .. i].
+// Returns 0 when the window contains no edits.
+func windowedReadEditRatio(turns []metrics.TurnMetrics, window int) []float64 {
+	n := len(turns)
+	result := make([]float64, n)
+	var sumReads, sumEdits int
+	for i := 0; i < n; i++ {
+		sumReads += turns[i].ToolReads
+		sumEdits += turns[i].ToolEdits
+		if i >= window {
+			sumReads -= turns[i-window].ToolReads
+			sumEdits -= turns[i-window].ToolEdits
+		}
+		if sumEdits > 0 {
+			result[i] = float64(sumReads) / float64(sumEdits)
+		}
+	}
+	return result
 }

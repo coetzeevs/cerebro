@@ -177,10 +177,14 @@ func (s *MetricsStore) QueryTurns(f TurnFilter) ([]TurnMetrics, error) {
 		args = append(args, f.Until)
 	}
 
+	orderCol := "timestamp"
+	if f.OrderBy == OrderByTurnNumber {
+		orderCol = "turn_number"
+	}
 	if f.OrderDesc {
-		query += " ORDER BY turn_number DESC"
+		query += " ORDER BY " + orderCol + " DESC"
 	} else {
-		query += " ORDER BY turn_number ASC"
+		query += " ORDER BY " + orderCol + " ASC"
 	}
 
 	if f.Limit > 0 {

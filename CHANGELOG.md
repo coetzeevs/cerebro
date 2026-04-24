@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.10.1] - 2026-04-24
+
+### Bug Fixes
+- Fix `cerebro stats --metrics` showing all underscores for Read:Edit and Thinking sparklines
+  - Add 10-turn sliding window R:E ratio alongside per-turn ratio (reads and edits rarely co-occur in the same turn)
+  - Use thinking blocks (boolean: did thinking occur?) instead of thinking chars (always 0 when content is redacted)
+  - Show Think Depth sparkline conditionally when thinking content is non-empty
+  - Fix query ordering: chronological timestamp ordering instead of per-session turn_number
+  - Add "(redacted)" annotation when thinking content is infrastructure-redacted
+- Add `OrderField` type to `TurnFilter` for explicit timestamp vs turn_number ordering (prepares for dashboard Phase C)
+
 ## [1.10.0] - 2026-04-23
 
 ### Features

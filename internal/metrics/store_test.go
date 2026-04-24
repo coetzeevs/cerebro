@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 )
@@ -178,8 +179,9 @@ func TestQueryTurns_Limit(t *testing.T) {
 	s := testStore(t)
 
 	for i := 1; i <= 10; i++ {
+		ts := fmt.Sprintf("2026-04-23T10:%02d:00Z", i)
 		_ = s.InsertTurnMetrics([]TurnMetrics{
-			{SessionID: "s1", TurnNumber: i, Timestamp: "2026-04-23T10:00:00Z"},
+			{SessionID: "s1", TurnNumber: i, Timestamp: ts},
 		})
 	}
 
@@ -191,7 +193,56 @@ func TestQueryTurns_Limit(t *testing.T) {
 		t.Errorf("expected 3 rows with limit, got %d", len(rows))
 	}
 	if rows[0].TurnNumber != 10 {
-		t.Errorf("expected turn 10 first (desc), got %d", rows[0].TurnNumber)
+		t.Errorf("expected turn 10 first (desc by timestamp), got %d", rows[0].TurnNumber)
+	}
+}
+
+func TestQueryTurns_CrossSession_OrdersByTimestamp(t *testing.T) {
+	s := testStore(t)
+
+	// Two sessions with interleaved timestamps.
+	// Session A: turns at 10:00, 10:02, 10:04
+	// Session B: turns at 10:01, 10:03, 10:05
+	_ = s.InsertTurnMetrics([]TurnMetrics{
+		{SessionID: "sA", TurnNumber: 1, Timestamp: "2026-04-23T10:00:00Z"},
+		{SessionID: "sA", TurnNumber: 2, Timestamp: "2026-04-23T10:02:00Z"},
+		{SessionID: "sA", TurnNumber: 3, Timestamp: "2026-04-23T10:04:00Z"},
+		{SessionID: "sB", TurnNumber: 1, Timestamp: "2026-04-23T10:01:00Z"},
+		{SessionID: "sB", TurnNumber: 2, Timestamp: "2026-04-23T10:03:00Z"},
+		{SessionID: "sB", TurnNumber: 3, Timestamp: "2026-04-23T10:05:00Z"},
+	})
+
+	// Last 3 by timestamp should be: sB/3 (10:05), sA/3 (10:04), sB/2 (10:03).
+	rows, err := s.QueryTurns(TurnFilter{Limit: 3, OrderDesc: true})
+	if err != nil {
+		t.Fatalf("QueryTurns: %v", err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(rows))
+	}
+	if rows[0].SessionID != "sB" || rows[0].TurnNumber != 3 {
+		t.Errorf("row 0: expected sB/3, got %s/%d", rows[0].SessionID, rows[0].TurnNumber)
+	}
+	if rows[1].SessionID != "sA" || rows[1].TurnNumber != 3 {
+		t.Errorf("row 1: expected sA/3, got %s/%d", rows[1].SessionID, rows[1].TurnNumber)
+	}
+	if rows[2].SessionID != "sB" || rows[2].TurnNumber != 2 {
+		t.Errorf("row 2: expected sB/2, got %s/%d", rows[2].SessionID, rows[2].TurnNumber)
+	}
+
+	// OrderByTurnNumber should give different results: sA/3, sB/3 (both turn_number=3).
+	rows2, err := s.QueryTurns(TurnFilter{Limit: 2, OrderBy: OrderByTurnNumber, OrderDesc: true})
+	if err != nil {
+		t.Fatalf("QueryTurns by turn_number: %v", err)
+	}
+	if len(rows2) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows2))
+	}
+	// Both should have turn_number=3.
+	for _, r := range rows2 {
+		if r.TurnNumber != 3 {
+			t.Errorf("expected turn_number=3, got %d", r.TurnNumber)
+		}
 	}
 }
 

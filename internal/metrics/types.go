@@ -63,11 +63,22 @@ type IngestState struct {
 	LastOffset int64  `json:"last_offset"`
 }
 
+// OrderField selects which column to sort turn queries by.
+type OrderField int
+
+const (
+	// OrderByTimestamp sorts chronologically (default zero value).
+	OrderByTimestamp OrderField = iota
+	// OrderByTurnNumber sorts by per-session turn number.
+	OrderByTurnNumber
+)
+
 // TurnFilter specifies query parameters for turn retrieval.
 type TurnFilter struct {
 	SessionID string
 	Since     string // ISO 8601 timestamp
 	Until     string // ISO 8601 timestamp
 	Limit     int
+	OrderBy   OrderField // default (zero) = timestamp
 	OrderDesc bool
 }

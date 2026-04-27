@@ -34,3 +34,8 @@ vendor/
 .cerebro-gc.log
 .claude/settings.local.json
 RELEASE_NOTES.md
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key

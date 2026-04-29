@@ -68,6 +68,29 @@ var stopCategories = []phraseCategory{
 	},
 }
 
+// permissionExemptions detect contexts where permission-seeking language is
+// legitimate (workflow approval gates, risky operation confirmations).
+// These only apply to the "permission-seeking" category.
+var permissionExemptions = []*regexp.Regexp{
+	// "Shall I push / deploy / merge / delete?" — risky ops requiring confirmation
+	regexp.MustCompile(`(?i)\b(shall I|would you like me to|let me know if)\b.{0,40}\b(push|deploy|merge|delete|remove|drop|force|publish|release|reset)\b`),
+	// Test/build success followed by permission question
+	regexp.MustCompile(`(?is)(tests? pass|all green|build succeed|linter.*clean|0 (failures|errors)).{0,200}\b(shall I|would you like me to|let me know)\b`),
+	// Plan/design/review context followed by permission question (workflow gate)
+	regexp.MustCompile(`(?is)\b(plan|approach|proposal|design|strategy|ready for.{0,10}review)\b.{0,500}\b(shall I|would you like me to)\b`),
+}
+
+// isExempt returns true if the message matches any permission exemption pattern,
+// indicating a legitimate workflow gate or risky operation confirmation.
+func isExempt(msg string) bool {
+	for _, pat := range permissionExemptions {
+		if pat.MatchString(msg) {
+			return true
+		}
+	}
+	return false
+}
+
 // evalStopGuard reads hook input from r, evaluates the last assistant message
 // against known premature-stop patterns, and writes a JSON decision to w.
 // Returns the matched category name (empty string if no match / allowed).
@@ -83,11 +106,23 @@ func evalStopGuard(r io.Reader, w io.Writer) (string, error) {
 		_ = json.Unmarshal(data, &input) // ignore parse errors; empty message = allow
 	}
 
+	// Safety valve: if already blocked once this turn, allow stopping
+	// unconditionally to prevent infinite blocking loops.
+	if input.StopHookActive {
+		_, err = fmt.Fprintln(w, "{}")
+		return "", err
+	}
+
 	msg := strings.TrimSpace(input.LastAssistantMessage)
 
 	// Check each category in order; first match wins.
 	for _, cat := range stopCategories {
 		if msg != "" && cat.Pattern.MatchString(msg) {
+			// For permission-seeking, check if the context indicates a
+			// legitimate workflow gate or risky operation confirmation.
+			if cat.Name == "permission-seeking" && isExempt(msg) {
+				continue
+			}
 			decision := stopHookDecision{
 				Decision: "block",
 				Reason:   cat.Reason,

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixes
+- `stop-guard`: false positives on legitimate approval gates and risky operation confirmations
+  - Workflow gates (e.g. `/develop` Phase 3 plan review) no longer blocked
+  - Risky operation confirmations (push, deploy, delete, merge) no longer blocked
+  - `stop_hook_active` safety valve prevents infinite blocking loops
+  - Lazy permission-seeking ("Shall I also update the docs?") still blocked
+- Global `~/.claude/settings.json` Stop hook now delegates to `cerebro stop-guard` instead of inline bash (single implementation, fails safe if cerebro not on PATH)
+
 ## [1.12.0] - 2026-04-24
 
 ### Features

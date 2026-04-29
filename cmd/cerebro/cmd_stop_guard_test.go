@@ -142,6 +142,127 @@ func TestStopGuard_OutputIsValidJSON(t *testing.T) {
 	}
 }
 
+func TestStopGuard_StopHookActive_AllowsStop(t *testing.T) {
+	// Safety valve: if already blocked once this turn, allow stopping unconditionally.
+	phrases := []string{
+		`Shall I continue with the implementation?`,        // permission-seeking
+		`I can stop here if that looks good.`,              // premature-stopping
+		`That's beyond the scope of this task.`,            // scope-reduction
+		`Would you like me to proceed with the next step?`, // permission-seeking
+	}
+	for _, phrase := range phrases {
+		input := makeStopInputWithActive(phrase, true)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "" {
+			t.Errorf("expected allow when stop_hook_active=true for %q, got %q", phrase, decision.Decision)
+		}
+	}
+}
+
+func TestStopGuard_ExemptsApprovalGate(t *testing.T) {
+	phrases := []string{
+		"Here's my plan for the refactoring:\n1. Update handler\n2. Add tests\n\nShall I proceed with implementation?",
+		"I propose the following approach:\n- Refactor the store layer\n- Update callers\n\nWould you like me to implement this?",
+		"My design for the new feature uses a factory pattern. Shall I proceed?",
+		"Here's the implementation strategy:\n\n1. Add migration\n2. Update model\n\nShall I move forward?",
+		"Ready for your review. Shall I proceed with implementation?",
+	}
+	for _, phrase := range phrases {
+		input := makeStopInput(phrase)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "" {
+			t.Errorf("expected allow for approval gate %q, got decision=%q reason=%q", phrase, decision.Decision, decision.Reason)
+		}
+	}
+}
+
+func TestStopGuard_BlocksBareProceedWithoutContext(t *testing.T) {
+	// Bare "Shall I proceed?" without plan/review context is lazy permission-seeking.
+	phrases := []string{
+		`Shall I proceed with the implementation?`,
+		`Would you like me to proceed?`,
+		`Shall I move forward with this?`,
+		`Would you like me to start coding?`,
+	}
+	for _, phrase := range phrases {
+		input := makeStopInput(phrase)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "block" {
+			t.Errorf("expected block for bare proceed %q, got %q", phrase, decision.Decision)
+		}
+	}
+}
+
+func TestStopGuard_ExemptsRiskyOpConfirmation(t *testing.T) {
+	phrases := []string{
+		`All tests pass. Shall I push to origin?`,
+		`Would you like me to deploy this?`,
+		`Shall I merge into main?`,
+		`Would you like me to delete the old branch?`,
+		`Let me know if you want me to force push.`,
+		`Shall I publish the package?`,
+		`Would you like me to release this version?`,
+		`Shall I push?`,
+		`Ready to push and open draft PR. Shall I push?`,
+	}
+	for _, phrase := range phrases {
+		input := makeStopInput(phrase)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "" {
+			t.Errorf("expected allow for risky op %q, got decision=%q", phrase, decision.Decision)
+		}
+	}
+}
+
+func TestStopGuard_ExemptsCompletionConfirmation(t *testing.T) {
+	phrases := []string{
+		`175 tests, 0 failures. Ready to push and open draft PR. Shall I push?`,
+		`All tests pass and the linter is clean. Would you like me to proceed?`,
+		`Build succeeded. Shall I push?`,
+		`0 errors, 0 warnings. Let me know if you want me to push.`,
+	}
+	for _, phrase := range phrases {
+		input := makeStopInput(phrase)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "" {
+			t.Errorf("expected allow for completion confirm %q, got decision=%q", phrase, decision.Decision)
+		}
+	}
+}
+
+func TestStopGuard_StillBlocksLazyPermissionSeeking(t *testing.T) {
+	phrases := []string{
+		`Shall I continue with the rest?`,
+		`Would you like me to handle that?`,
+		`Let me know if you need anything else.`,
+		`Shall I also update the docs?`,
+		`Would you like me to add error handling?`,
+	}
+	for _, phrase := range phrases {
+		input := makeStopInput(phrase)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "block" {
+			t.Errorf("expected block for lazy permission-seeking %q, got %q", phrase, decision.Decision)
+		}
+	}
+}
+
+func TestStopGuard_ExemptionDoesNotAffectOtherCategories(t *testing.T) {
+	// Even if the message contains exemption context, other categories still fire.
+	phrases := []string{
+		`I can stop here. The plan is ready.`,       // premature-stopping
+		`That's beyond the scope of this approach.`, // scope-reduction
+		`I'll leave it at that for this design.`,    // premature-stopping
+	}
+	for _, phrase := range phrases {
+		input := makeStopInput(phrase)
+		decision := runStopGuard(t, input)
+		if decision.Decision != "block" {
+			t.Errorf("expected block for non-permission category %q, got %q", phrase, decision.Decision)
+		}
+	}
+}
+
 // --- Test helpers ---
 
 type stopDecision struct {
@@ -150,10 +271,14 @@ type stopDecision struct {
 }
 
 func makeStopInput(message string) []byte {
+	return makeStopInputWithActive(message, false)
+}
+
+func makeStopInputWithActive(message string, active bool) []byte {
 	input := map[string]any{
 		"session_id":             "test-session",
 		"hook_event_name":        "Stop",
-		"stop_hook_active":       false,
+		"stop_hook_active":       active,
 		"last_assistant_message": message,
 	}
 	data, _ := json.Marshal(input)

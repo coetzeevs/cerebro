@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
+## [1.13.0]
 
 ### Fixes
 - `stop-guard`: false positives on legitimate approval gates and risky operation confirmations

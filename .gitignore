@@ -27,6 +27,9 @@ Thumbs.db
 # Go
 vendor/
 
+# Node / npm (pi-cerebro TS subpackage)
+node_modules/
+
 # Cerebro data (don't commit brain files)
 *.sqlite
 *.sqlite-wal

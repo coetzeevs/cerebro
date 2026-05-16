@@ -1,0 +1,38 @@
+{
+  "name": "@coetzeevs/pi-cerebro",
+  "version": "0.1.0",
+  "description": "Pi extension for cerebro memory integration — recall and remember tools + session_start boot prime.",
+  "main": "src/index.ts",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "cerebro",
+    "pi-extension"
+  ],
+  "pi": {
+    "extensions": [
+      "src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "files": [
+    "src/**/*.ts",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test 'tests/**/*.test.mjs'",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "jiti": "^2.0.0",
+    "typebox": "^1.0.0",
+    "typescript": "^5.7.0"
+  }
+}

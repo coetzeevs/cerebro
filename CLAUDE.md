@@ -89,6 +89,7 @@ Run `cerebro config list` to see available settings. CLI flags always override b
 - Every PR must include a CHANGELOG.md entry in the same branch
 - Git tags must have a meaningful annotation summarizing the work shipped — don't just repeat the version number
 - `cerebro pi-init -p <dir>` emits a deterministic `pi.config.json` snippet for the `pi-cerebro` Pi extension; stdout is pure JSON, stderr carries status messages only (HS-007)
+- `pi-cerebro/` is a polyglot TypeScript subdirectory (package `@coetzeevs/pi-cerebro`) that lives inside the Go cerebro repo. It is a Pi extension (not a cerebro Go subcommand). Test runner: `node:test` with glob `tests/**/*.test.mjs` (ADR-0001 stack-frame default). TypeScript strict + NodeNext. Stub binaries in `pi-cerebro/tests/fixtures/` are invoked via PATH prepend — executable bit (0755) required. Shell-out discipline: all `execFileSync` calls use argv-array form, no `shell: true`. (HS-009)
 - `cerebro migrate --realpath-hashes` is the one-shot migration to consolidate pre-HS-008 duplicate brains created under unresolved-path hashes. Run once after upgrading to HS-008; idempotent. Use `--dry-run` first to preview. (HS-008)
 
 ## Task Tracking with Beads

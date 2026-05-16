@@ -16,6 +16,7 @@ var recallLimitFlag int
 var recallThresholdFlag float64
 var recallPrimeFlag bool
 var recallGlobalFlag bool
+var recallSubtypeFlag string
 
 func init() {
 	cmd := &cobra.Command{
@@ -33,6 +34,13 @@ With --prime and a query, performs vector search with a low threshold.`,
 	cmd.Flags().Float64VarP(&recallThresholdFlag, "threshold", "T", 0.3, "Minimum similarity threshold for query mode")
 	cmd.Flags().BoolVar(&recallPrimeFlag, "prime", false, "Session-start mode: curated high-value selection")
 	cmd.Flags().BoolVar(&recallGlobalFlag, "global", false, "Query global store in addition to project store")
+	cmd.Flags().StringVar(&recallSubtypeFlag, "subtype", "",
+		`Filter results by subtype after composite scoring. Applied post-ExpandGraph so
+composite scores, threshold, and ranking are unaffected by the filter.
+Use --subtype "" to return only nodes with no subtype (NULL).
+Non-empty value performs exact match.
+NOTE: --subtype is ignored in --prime mode (prime uses stratified/MMR selection).
+NOTE: --subtype "" on recall *filters* for NULL-subtype nodes. On update, --subtype "" *clears* the subtype.`)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -68,6 +76,13 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Query mode: vector search with composite scoring.
+	// --subtype filter is resolved here: nil if flag not provided (backward compat),
+	// &value if flag was provided (including empty string for NULL-match).
+	var subtypeFilter *string
+	if cmd.Flags().Changed("subtype") {
+		subtypeFilter = &recallSubtypeFlag
+	}
+
 	var results []store.ScoredNode
 	if recallGlobalFlag {
 		global, globalErr := brain.Open(brain.GlobalPath())
@@ -75,9 +90,9 @@ func runRecall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("global store not initialized — run 'cerebro init --global' first: %w", globalErr)
 		}
 		defer func() { _ = global.Close() }()
-		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global)
+		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global, subtypeFilter)
 	} else {
-		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag)
+		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag, subtypeFilter)
 	}
 	if err != nil {
 		return err

@@ -2,6 +2,27 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- `update`, `list`, `recall`: new `--subtype` flag for setting/filtering memory subtypes [OO-011]
+  - `cerebro update <id> --subtype <value>` sets subtype on an existing node; stamps `updated_at`
+  - `cerebro update <id> --subtype ""` clears the subtype to NULL
+  - `cerebro list --subtype <value>` filters list output by subtype (exact match)
+  - `cerebro list --subtype ""` filters to nodes with no subtype (NULL rows only)
+  - `cerebro recall <query> --subtype <value>` filters semantic results by subtype after composite scoring and graph expansion
+  - All flags compose with existing filters (`--type`, `--status`, `--limit`, `--threshold`)
+  - Subtype changes via `update` stamp `updated_at` (knowledge-classification metadata semantics)
+  - Backward compatible: omitting the flag yields the pre-OO-011 behaviour exactly
+  - `--subtype` is ignored in `--prime` mode (prime uses stratified/MMR selection, not query mode)
+
+### Changed
+- **BREAKING**: `Brain.Search` and `Brain.SearchWithGlobal` (in `brain/brain.go`) now accept a
+  `subtypeFilter *string` positional parameter as the last argument. Pass `nil` to preserve
+  pre-OO-011 behaviour. All 5 in-repo callers updated (`cmd_search.go`, `cmd_recall.go` ×2,
+  `brain_test.go` ×2). External consumers (e.g. `qraftworx-cli`) must update their wrappers
+  (follow-up ticket: QWX-001). [OO-011]
+
 ## [1.13.0]
 
 ### Fixes

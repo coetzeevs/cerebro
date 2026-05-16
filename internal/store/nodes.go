@@ -47,6 +47,13 @@ type UpdateNodeOpts struct {
 	Content    *string
 	Metadata   json.RawMessage
 	Importance *float64
+	// Subtype, when non-nil, updates the node's subtype.
+	// A pointer to an empty string (&"") clears the subtype to NULL.
+	// A pointer to a non-empty string sets the subtype to that value.
+	// Nil leaves the existing subtype unchanged.
+	// Note: subtype changes stamp updated_at because subtype is knowledge-classification
+	// metadata — it changes what the memory means to the retrieval taxonomy.
+	Subtype *string
 }
 
 // UpdateNode modifies an existing node's content and/or importance.
@@ -71,6 +78,16 @@ func (s *Store) UpdateNode(id string, opts UpdateNodeOpts) error {
 	if opts.Metadata != nil {
 		if _, err := s.db.Exec(`UPDATE nodes SET metadata = ? WHERE id = ?`, opts.Metadata, id); err != nil {
 			return fmt.Errorf("updating metadata: %w", err)
+		}
+	}
+	// Subtype: nil = no-op; &"" = clear to NULL; &"x" = set to "x".
+	// updated_at is stamped because subtype is knowledge-classification metadata.
+	if opts.Subtype != nil {
+		if _, err := s.db.Exec(
+			`UPDATE nodes SET subtype = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			nullString(*opts.Subtype), id,
+		); err != nil {
+			return fmt.Errorf("updating subtype: %w", err)
 		}
 	}
 	return nil
@@ -242,8 +259,15 @@ func (s *Store) GetNodeWithEdges(id string) (*NodeWithEdges, error) {
 
 // ListNodesOpts configures node listing filters.
 type ListNodesOpts struct {
-	Type         NodeType
-	Status       string
+	Type   NodeType
+	Status string
+	// Subtype, when non-nil, filters nodes by subtype.
+	// A pointer to an empty string (&"") matches only nodes with NULL subtype.
+	// A pointer to a non-empty string matches only nodes with that exact subtype.
+	// Nil means no filter — all subtypes (including NULL) are returned.
+	// This asymmetry with update (where &"" clears to NULL) is intentional:
+	// on list/recall, &"" means "show me untagged memories".
+	Subtype      *string
 	Since        *time.Time // filters on created_at >= ?
 	SinceChanged *time.Time // filters on COALESCE(updated_at, created_at) >= ?
 	Limit        int
@@ -251,7 +275,7 @@ type ListNodesOpts struct {
 }
 
 // ListNodes returns nodes matching the given filters.
-func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
+func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) { //nolint:gocritic // hugeParam: ListNodesOpts is intentionally a value type for clarity; cost is copy-on-call not heap alloc
 	query := `SELECT id, type, subtype, content, metadata, importance, decay_rate,
 		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
 		updated_at, last_surfaced
@@ -265,6 +289,17 @@ func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
 	if opts.Status != "" {
 		query += ` AND status = ?`
 		args = append(args, opts.Status)
+	}
+	// Subtype filter: nil = no filter; &"" = NULL-only; &"x" = exact match.
+	// The IS NULL branch uses a constant SQL literal; no user input is concatenated.
+	// The non-empty branch uses ? parameter binding — injection-impossible by construction.
+	if opts.Subtype != nil {
+		if *opts.Subtype == "" {
+			query += ` AND subtype IS NULL`
+		} else {
+			query += ` AND subtype = ?`
+			args = append(args, *opts.Subtype)
+		}
 	}
 	if opts.Since != nil {
 		query += ` AND created_at >= ?`

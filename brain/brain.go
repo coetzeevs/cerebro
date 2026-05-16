@@ -172,6 +172,7 @@ func (b *Brain) Update(id string, opts ...UpdateOption) error {
 		Content:    o.Content,
 		Metadata:   o.Metadata,
 		Importance: o.Importance,
+		Subtype:    o.Subtype,
 	}
 
 	if err := b.store.UpdateNode(id, storeOpts); err != nil {
@@ -240,7 +241,7 @@ func (b *Brain) Get(id string) (*store.NodeWithEdges, error) {
 }
 
 // List returns nodes matching the given filters.
-func (b *Brain) List(opts store.ListNodesOpts) ([]store.Node, error) {
+func (b *Brain) List(opts store.ListNodesOpts) ([]store.Node, error) { //nolint:gocritic // hugeParam: ListNodesOpts is intentionally a value type for API clarity; passed by value at call sites
 	return b.store.ListNodes(opts)
 }
 
@@ -256,7 +257,14 @@ func (b *Brain) GC(threshold float64, dryRun bool) (*store.GCResult, error) {
 }
 
 // Search performs vector similarity search and returns scored results.
-func (b *Brain) Search(ctx context.Context, query string, limit int, threshold float64) ([]store.ScoredNode, error) {
+// subtypeFilter, when non-nil, post-filters results by subtype after composite
+// scoring and graph expansion. This preserves threshold and ranking semantics:
+// composite scoring and --threshold cutoff are applied first (inside VectorSearch),
+// then ExpandGraph adds graph neighbours, then the subtype filter is applied.
+// Note: the filter may shrink the result count below `limit`; the caller's
+// `--limit` is a ceiling, not a guarantee (threshold can already shrink results).
+// Pass nil for subtypeFilter to get pre-OO-011 behaviour (no subtype filter).
+func (b *Brain) Search(ctx context.Context, query string, limit int, threshold float64, subtypeFilter *string) ([]store.ScoredNode, error) {
 	if b.embedder.Dimensions() == 0 {
 		return nil, fmt.Errorf("no embedding provider configured — search requires embeddings")
 	}
@@ -271,12 +279,23 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 		return nil, err
 	}
 
-	return b.store.ExpandGraph(results, limit)
+	expanded, err := b.store.ExpandGraph(results, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	// Post-ExpandGraph subtype filter: applied after all scoring so that
+	// composite scores and threshold are unaffected. Every returned node
+	// is guaranteed to match the requested subtype.
+	return filterScoredNodesBySubtype(expanded, subtypeFilter), nil
 }
 
 // SearchWithGlobal searches both the project store (weight 1.0) and the global
 // store (weight 0.7), merges results, and returns the top-K by weighted score.
-func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, threshold float64, global *Brain) ([]store.ScoredNode, error) {
+// subtypeFilter, when non-nil, is applied post-merge (after ExpandGraph on both
+// stores) so that every returned node is guaranteed to match the subtype.
+// Pass nil for subtypeFilter to get pre-OO-011 behaviour (no subtype filter).
+func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, threshold float64, global *Brain, subtypeFilter *string) ([]store.ScoredNode, error) {
 	if b.embedder.Dimensions() == 0 {
 		return nil, fmt.Errorf("no embedding provider configured — search requires embeddings")
 	}
@@ -306,7 +325,31 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		return nil, fmt.Errorf("global graph expansion: %w", err)
 	}
 
-	return mergeSearchResults(projectResults, globalResults, limit), nil
+	merged := mergeSearchResults(projectResults, globalResults, limit)
+
+	// Post-merge subtype filter: applied after all scoring and graph expansion.
+	return filterScoredNodesBySubtype(merged, subtypeFilter), nil
+}
+
+// filterScoredNodesBySubtype applies an optional subtype filter to a slice of
+// ScoredNode results. It is called after ExpandGraph so that composite scoring
+// and threshold semantics are unaffected.
+//
+// Filter semantics:
+//   - nil filter: return the input slice unchanged (no-op; backward compatible).
+//   - &"":  return only nodes whose Subtype is "" (i.e., NULL in the database).
+//   - &"x": return only nodes whose Subtype equals "x" (exact match).
+func filterScoredNodesBySubtype(nodes []store.ScoredNode, filter *string) []store.ScoredNode {
+	if filter == nil {
+		return nodes
+	}
+	out := nodes[:0:0] // zero-length slice sharing no backing array with input
+	for i := range nodes {
+		if nodes[i].Subtype == *filter {
+			out = append(out, nodes[i])
+		}
+	}
+	return out
 }
 
 // mergeSearchResults merges project and global results.
@@ -482,6 +525,9 @@ type updateOptions struct {
 	Content    *string
 	Metadata   json.RawMessage
 	Importance *float64
+	// Subtype, when non-nil, updates the node's subtype.
+	// &"" clears to NULL; &"x" sets to "x"; nil leaves unchanged.
+	Subtype *string
 }
 
 func updateDefaults() updateOptions { return updateOptions{} }
@@ -495,4 +541,13 @@ func WithContent(c string) UpdateOption {
 
 func WithUpdatedImportance(i float64) UpdateOption {
 	return func(o *updateOptions) { o.Importance = &i }
+}
+
+// WithUpdatedSubtype sets or clears the subtype on an existing node.
+// Pass an empty string to clear the subtype to NULL.
+// Pass a non-empty string to set the subtype to that value.
+// Note: subtype changes stamp updated_at because subtype is knowledge-classification
+// metadata — it changes what the memory means to the retrieval taxonomy.
+func WithUpdatedSubtype(s string) UpdateOption {
+	return func(o *updateOptions) { o.Subtype = &s }
 }

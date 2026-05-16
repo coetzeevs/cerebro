@@ -16,11 +16,25 @@ type MetricsStore struct {
 	path string
 }
 
-// MetricsPath returns the metrics database path for a project directory.
-// Mirrors brain.ProjectPath() with a .metrics.sqlite extension.
+// MetricsPath returns the metrics database path for a project directory,
+// resolving symlinks before hashing per Operational Ontology §5.14 rule 26 (HS-008).
+//
+// Mirrors brain.ProjectPath() symlink-resolution discipline with a .metrics.sqlite
+// extension. Uses the same EvalSymlinks-with-Abs-fallback pattern: if EvalSymlinks
+// fails (path does not exist yet), falls back to filepath.Abs — preserving the
+// pre-HS-008 hash for the CI-bootstrap / pre-checkout caller case.
+//
+// Note: brain.ProjectPath and MetricsPath are intentionally separate implementations
+// (not cross-coupled) to keep the brain and metrics packages decoupled. Both must
+// apply the same algorithm to guarantee that brain and metrics files for the same
+// project always land under matching hashes.
 func MetricsPath(projectDir string) string {
 	abs, _ := filepath.Abs(projectDir)
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(abs)))
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		resolved = abs // fall back to abs (pre-HS-008 behaviour) when path does not exist
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(resolved)))
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".cerebro", "projects", hash+".metrics.sqlite")
 }

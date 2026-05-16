@@ -75,9 +75,9 @@ func runRecall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("global store not initialized — run 'cerebro init --global' first: %w", globalErr)
 		}
 		defer func() { _ = global.Close() }()
-		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global)
+		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global, nil)
 	} else {
-		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag)
+		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag, nil)
 	}
 	if err != nil {
 		return err

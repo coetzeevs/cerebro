@@ -322,9 +322,22 @@ func TestStats(t *testing.T) {
 func TestSearchWithoutEmbedder(t *testing.T) {
 	b := testBrain(t)
 
-	_, err := b.Search(context.Background(), "test query", 10, 0.7)
+	_, err := b.Search(context.Background(), "test query", 10, 0.7, nil)
 	if err == nil {
 		t.Fatal("expected error searching without embedder")
+	}
+}
+
+// TestSearchWithoutEmbedder_WithSubtypeFilter verifies that Search with a
+// non-nil subtypeFilter still returns the embedder-absent error (AC scenario 6
+// backward compat — the subtype filter does not mask embedder errors).
+func TestSearchWithoutEmbedder_WithSubtypeFilter(t *testing.T) {
+	b := testBrain(t)
+	subtype := "routing-discovery"
+
+	_, err := b.Search(context.Background(), "test query", 10, 0.7, &subtype)
+	if err == nil {
+		t.Fatal("expected error searching without embedder (subtypeFilter should not mask error)")
 	}
 }
 
@@ -585,9 +598,142 @@ func TestSearchWithGlobal_NoEmbedder(t *testing.T) {
 	src := testBrain(t)
 	dst := testBrain(t)
 
-	_, err := src.SearchWithGlobal(context.Background(), "query", 10, 0.3, dst)
+	_, err := src.SearchWithGlobal(context.Background(), "query", 10, 0.3, dst, nil)
 	if err == nil {
 		t.Fatal("expected error without embedder")
+	}
+}
+
+// --- Subtype update tests [OO-011] ---
+
+// TestBrainUpdate_WithUpdatedSubtype verifies that WithUpdatedSubtype correctly
+// sets the subtype on an existing node via the Brain.Update path.
+func TestBrainUpdate_WithUpdatedSubtype(t *testing.T) {
+	b := testBrain(t)
+
+	id, err := b.Add("a concept with no subtype", store.TypeConcept, WithImportance(0.7))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Set subtype via Brain.Update
+	if err := b.Update(id, WithUpdatedSubtype("routing-discovery")); err != nil {
+		t.Fatalf("Update(WithUpdatedSubtype): %v", err)
+	}
+
+	nwe, err := b.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if nwe.Subtype != "routing-discovery" {
+		t.Errorf("expected subtype=routing-discovery after WithUpdatedSubtype, got %q", nwe.Subtype)
+	}
+}
+
+// TestBrainUpdate_WithUpdatedSubtype_Clear verifies that WithUpdatedSubtype("")
+// clears the subtype to NULL via the Brain.Update path.
+func TestBrainUpdate_WithUpdatedSubtype_Clear(t *testing.T) {
+	b := testBrain(t)
+
+	id, err := b.Add("a concept with subtype", store.TypeConcept,
+		WithSubtype("routing-discovery"),
+		WithImportance(0.7),
+	)
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Verify initial subtype
+	nwe, err := b.Get(id)
+	if err != nil {
+		t.Fatalf("Get before clear: %v", err)
+	}
+	if nwe.Subtype != "routing-discovery" {
+		t.Fatalf("expected initial subtype=routing-discovery, got %q", nwe.Subtype)
+	}
+
+	// Clear subtype with empty string
+	if err := b.Update(id, WithUpdatedSubtype("")); err != nil {
+		t.Fatalf("Update(WithUpdatedSubtype clear): %v", err)
+	}
+
+	nwe, err = b.Get(id)
+	if err != nil {
+		t.Fatalf("Get after clear: %v", err)
+	}
+	if nwe.Subtype != "" {
+		t.Errorf("expected empty subtype after clear, got %q", nwe.Subtype)
+	}
+}
+
+// TestBrainUpdate_WithUpdatedSubtype_NoContentReembed verifies that
+// WithUpdatedSubtype does not trigger re-embedding (subtype is metadata, not content).
+func TestBrainUpdate_WithUpdatedSubtype_NoContentReembed(t *testing.T) {
+	b := testBrain(t)
+
+	id, err := b.Add("stable content", store.TypeConcept, WithImportance(0.8))
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Update subtype only — should succeed even if embedder is noop
+	if err := b.Update(id, WithUpdatedSubtype("operator-safety")); err != nil {
+		t.Fatalf("Update(WithUpdatedSubtype only) should not fail: %v", err)
+	}
+
+	// Content must be unchanged
+	nwe, err := b.Get(id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if nwe.Content != "stable content" {
+		t.Errorf("expected content unchanged after subtype update, got %q", nwe.Content)
+	}
+}
+
+// TestFilterScoredNodesBySubtype verifies the post-search subtype filter helper.
+// This tests the pure-Go filter that sits after ExpandGraph in Search.
+func TestFilterScoredNodesBySubtype(t *testing.T) {
+	nodes := []store.ScoredNode{
+		{Node: store.Node{ID: "a", Subtype: "routing-discovery"}, Score: 0.9},
+		{Node: store.Node{ID: "b", Subtype: ""}, Score: 0.8},
+		{Node: store.Node{ID: "c", Subtype: "operator-safety"}, Score: 0.7},
+		{Node: store.Node{ID: "d", Subtype: "routing-discovery"}, Score: 0.6},
+	}
+
+	// nil filter: no change — backward compat
+	result := filterScoredNodesBySubtype(nodes, nil)
+	if len(result) != len(nodes) {
+		t.Errorf("nil filter: expected %d results, got %d", len(nodes), len(result))
+	}
+
+	// &"routing-discovery" filter: only nodes a and d
+	rd := "routing-discovery"
+	result = filterScoredNodesBySubtype(nodes, &rd)
+	if len(result) != 2 {
+		t.Errorf("subtype=routing-discovery: expected 2, got %d", len(result))
+	}
+	for _, r := range result {
+		if r.Subtype != "routing-discovery" {
+			t.Errorf("expected all results to have subtype=routing-discovery, got %q", r.Subtype)
+		}
+	}
+
+	// &"" filter: only nodes with empty subtype (node b)
+	empty := ""
+	result = filterScoredNodesBySubtype(nodes, &empty)
+	if len(result) != 1 {
+		t.Errorf("subtype=\"\": expected 1 NULL-subtype node, got %d", len(result))
+	}
+	if len(result) > 0 && result[0].ID != "b" {
+		t.Errorf("expected node b (empty subtype), got %s", result[0].ID)
+	}
+
+	// &"unicorn": no matches
+	unicorn := "unicorn"
+	result = filterScoredNodesBySubtype(nodes, &unicorn)
+	if len(result) != 0 {
+		t.Errorf("subtype=unicorn: expected 0, got %d", len(result))
 	}
 }
 

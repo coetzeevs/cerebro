@@ -34,7 +34,8 @@ func runSearch(cmd *cobra.Command, args []string) error {
 	applyConfigFlag(cmd, b.Store(), "limit", "search_limit")
 	applyConfigFlag(cmd, b.Store(), "threshold", "search_threshold")
 
-	results, err := b.Search(context.Background(), query, searchLimitFlag, searchThresholdFlag)
+	// subtypeFilter is nil here — cerebro search has no --subtype flag (out of scope per OO-011)
+	results, err := b.Search(context.Background(), query, searchLimitFlag, searchThresholdFlag, nil)
 	if err != nil {
 		return err
 	}

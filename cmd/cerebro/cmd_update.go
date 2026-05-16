@@ -9,6 +9,7 @@ import (
 
 var updateContentFlag string
 var updateImportanceFlag float64
+var updateSubtypeFlag string
 
 func init() {
 	cmd := &cobra.Command{
@@ -19,6 +20,10 @@ func init() {
 	}
 	cmd.Flags().StringVarP(&updateContentFlag, "content", "c", "", "New content")
 	cmd.Flags().Float64VarP(&updateImportanceFlag, "importance", "i", 0, "New importance score")
+	cmd.Flags().StringVar(&updateSubtypeFlag, "subtype", "",
+		`New subtype tag for this node. Use --subtype "" to clear the subtype to NULL.
+NOTE: --subtype "" on update *clears* the subtype. On list and recall, --subtype ""
+*filters* for nodes with no subtype. This asymmetry is intentional.`)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -41,9 +46,14 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	if cmd.Flags().Changed("importance") {
 		opts = append(opts, brain.WithUpdatedImportance(updateImportanceFlag))
 	}
+	// --subtype uses Changed() to distinguish "not provided" (no-op) from
+	// "provided as empty string" (clear to NULL). This is the standard cobra idiom.
+	if cmd.Flags().Changed("subtype") {
+		opts = append(opts, brain.WithUpdatedSubtype(updateSubtypeFlag))
+	}
 
 	if len(opts) == 0 {
-		return fmt.Errorf("nothing to update — specify --content or --importance")
+		return fmt.Errorf("nothing to update — specify --content, --importance, or --subtype")
 	}
 
 	if err := b.Update(id, opts...); err != nil {

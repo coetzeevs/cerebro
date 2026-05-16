@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "cerebro",
+  "project_id": "87c70cc8-08ca-419c-b8e9-0aaa198c5c2a"
+}

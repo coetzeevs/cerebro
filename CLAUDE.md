@@ -1,5 +1,7 @@
 # Cerebro
 
+@AGENTS.md
+
 Local-first persistent memory system for AI agents. SQLite-backed with vector search (sqlite-vec).
 
 ## Dogfooding
@@ -86,3 +88,9 @@ Run `cerebro config list` to see available settings. CLI flags always override b
 - Format flag: `--format md` (default) or `--format json`
 - Every PR must include a CHANGELOG.md entry in the same branch
 - Git tags must have a meaningful annotation summarizing the work shipped — don't just repeat the version number
+
+## Task Tracking with Beads
+
+Role boundaries (memory/tasks/planning), forbidden tool uses, and the durable-handoff rules now live in the ontology at `/Users/q/projects/agentic/documentation/Operational Ontology.md` (§3, §4, §5, §7). See `AGENTS.md` for the project-level pointers.
+
+Project-local convention: `bd dolt push` after each session-completing close (sync Beads data to Dolt remote before stopping).

@@ -1,28 +1,22 @@
 # Agent Instructions
 
-## Tool Responsibilities
+<!-- ontology-stack-frame -->
+Ontology version: 1.1
+Stack classification: stack-frame (Cerebro is the Memory layer in the agentic stack)
 
-| Concern | Tool | Commands |
-|---------|------|----------|
-| What do I know? | **Cerebro** | `/recall`, `/remember`, `cerebro` CLI |
-| What should I do? | **Beads** | `bd ready`, `bd show`, `bd create`, `bd close` |
-| What's the plan? | **Jira** | `acli` (read-only for context) |
+This project is part of the agentic stack; the operational ontology at `/Users/q/projects/agentic/documentation/Operational Ontology.md` is authoritative for any rule about cross-project responsibilities (memory vs tasks vs planning, runtime vs orchestration, etc.). Local rules below apply only to in-project behaviour and must not contradict the ontology. If a rule below conflicts with the ontology, the ontology wins and this file must be reconciled.
 
-### Memory is Cerebro's job
-- Do NOT use `bd remember` — all persistent knowledge goes through Cerebro
-- Use `/remember` for decisions, patterns, conventions, bug resolutions
-- Use `/recall` for retrieving past context
+## Stack-wide rules (canonical location)
 
-### Tasks are Beads' job
-- Do NOT use TodoWrite, TaskCreate, or markdown TODO files
-- Use `bd create` for new work items
-- Use `bd ready` to find unblocked tasks
-- Use `bd close <id>` to mark work complete
+The cross-tool role boundaries that previously lived here (memory = Cerebro, tasks = Beads, planning = Jira; forbidden uses of `bd remember`, TaskCreate, TodoWrite; etc.) now live in the ontology:
 
-### Planning comes from Jira
-- Stories and Epics live in Jira — don't duplicate them in Beads
-- Beads holds implementation subtasks that decompose Jira stories
-- Use `acli` to read Jira context when starting work
+- Layer model and System of Record table: `documentation/Operational Ontology.md` §3, §4
+- Memory vs `bd remember` rule: §5.2
+- Tasks vs Claude Code TaskCreate/TodoWrite: §5.6
+- Beads threads for durable handoffs: §5.8
+- All operational do-nots: §7
+
+Do not duplicate those rules here. Refer to the ontology when in doubt.
 
 ## Non-Interactive Shell Commands
 

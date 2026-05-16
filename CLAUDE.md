@@ -1,5 +1,7 @@
 # Cerebro
 
+@AGENTS.md
+
 Local-first persistent memory system for AI agents. SQLite-backed with vector search (sqlite-vec).
 
 ## Dogfooding
@@ -89,37 +91,6 @@ Run `cerebro config list` to see available settings. CLI flags always override b
 
 ## Task Tracking with Beads
 
-This project uses **bd (beads)** for implementation-level task tracking.
+Role boundaries (memory/tasks/planning), forbidden tool uses, and the durable-handoff rules now live in the ontology at `/Users/q/projects/agentic/documentation/Operational Ontology.md` (§3, §4, §5, §7). See `AGENTS.md` for the project-level pointers.
 
-### Role Boundaries
-
-| Layer | Tool | Purpose |
-|-------|------|---------|
-| **Memory** | Cerebro (`/recall`, `/remember`) | Decisions, patterns, context, knowledge |
-| **Tasks** | Beads (`bd`) | Implementation work items, blockers, dependencies |
-| **Planning** | Jira (via `acli`) | OKRs, Epics, Stories, roadmap, sprint planning |
-
-### Rules
-
-- **Memory**: Use Cerebro exclusively. Do NOT use `bd remember` — Cerebro handles all persistent knowledge.
-- **Tasks**: Use `bd` for tracking implementation work. Do NOT use TodoWrite, TaskCreate, or markdown TODO lists.
-- **Planning**: Jira stories inform what to build. Beads tasks decompose *how* to build it.
-
-### Quick Reference
-
-```bash
-bd ready              # Find unblocked work
-bd show <id>          # View issue details
-bd update <id> --claim  # Claim work atomically
-bd close <id>         # Complete work
-bd create "title"     # Create new task
-```
-
-### Session Workflow
-
-1. **Start**: `bd ready` to find available work
-2. **Claim**: `bd update <id> --claim` before starting
-3. **Work**: Implement, test, commit
-4. **Close**: `bd close <id>` when done
-5. **File follow-ups**: `bd create` for discovered work
-6. **Sync beads**: `bd dolt push`
+Project-local convention: `bd dolt push` after each session-completing close (sync Beads data to Dolt remote before stopping).

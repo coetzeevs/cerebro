@@ -275,7 +275,7 @@ type ListNodesOpts struct {
 }
 
 // ListNodes returns nodes matching the given filters.
-func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) {
+func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) { //nolint:gocritic // hugeParam: ListNodesOpts is intentionally a value type for clarity; cost is copy-on-call not heap alloc
 	query := `SELECT id, type, subtype, content, metadata, importance, decay_rate,
 		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
 		updated_at, last_surfaced

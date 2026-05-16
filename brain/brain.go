@@ -241,7 +241,7 @@ func (b *Brain) Get(id string) (*store.NodeWithEdges, error) {
 }
 
 // List returns nodes matching the given filters.
-func (b *Brain) List(opts store.ListNodesOpts) ([]store.Node, error) {
+func (b *Brain) List(opts store.ListNodesOpts) ([]store.Node, error) { //nolint:gocritic // hugeParam: ListNodesOpts is intentionally a value type for API clarity; passed by value at call sites
 	return b.store.ListNodes(opts)
 }
 

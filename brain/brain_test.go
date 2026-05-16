@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/coetzeevs/cerebro/internal/store"
@@ -368,6 +370,80 @@ func TestGlobalPath(t *testing.T) {
 	p := GlobalPath()
 	if filepath.Base(p) != "global.sqlite" {
 		t.Errorf("expected global.sqlite, got %q", filepath.Base(p))
+	}
+}
+
+// TestProjectPath_ResolvesSymlinks verifies that ProjectPath resolves symlinks
+// before hashing so that a symlinked project path and its realpath produce
+// identical brain paths (HS-008, Ontology §5.14 rule 26).
+func TestProjectPath_ResolvesSymlinks(t *testing.T) {
+	realDir := t.TempDir()
+	symlinkDir := filepath.Join(t.TempDir(), "symlink-project")
+
+	if err := os.Symlink(realDir, symlinkDir); err != nil {
+		t.Skipf("cannot create symlink (may require elevated privileges on this OS): %v", err)
+	}
+
+	pathViaReal := ProjectPath(realDir)
+	pathViaSym := ProjectPath(symlinkDir)
+
+	if pathViaReal != pathViaSym {
+		t.Errorf("symlinked and real paths should produce the same brain path:\n  real: %s\n  sym:  %s", pathViaReal, pathViaSym)
+	}
+}
+
+// TestProjectPath_FallbackOnNonexistent verifies that ProjectPath falls back to
+// filepath.Abs (pre-HS-008 behaviour) when the path does not exist, so that
+// CI bootstrap callers (path created post brain-init) still get a deterministic hash.
+func TestProjectPath_FallbackOnNonexistent(t *testing.T) {
+	nonexistent := filepath.Join(t.TempDir(), "does-not-exist", "project")
+
+	// Should not panic; should return a valid path with .sqlite extension.
+	p := ProjectPath(nonexistent)
+	if filepath.Ext(p) != ".sqlite" {
+		t.Errorf("expected .sqlite extension even for nonexistent path, got %q", filepath.Ext(p))
+	}
+	if p == "" {
+		t.Error("expected non-empty path for nonexistent input")
+	}
+}
+
+// TestProjectPath_DarwinTmpSymlink exercises the macOS motivating case where
+// /tmp is a symlink to /private/tmp. Skipped on non-Darwin platforms.
+// Uses a directory created under /private/tmp so that both /tmp/<dir> and
+// /private/tmp/<dir> actually exist and EvalSymlinks can resolve them.
+func TestProjectPath_DarwinTmpSymlink(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("macOS-specific /tmp → /private/tmp test")
+	}
+	// /tmp is a well-known symlink on macOS; /private/tmp is the realpath.
+	// Both should resolve to the same brain path.
+	const privateTmp = "/private/tmp"
+
+	// Verify the symlink actually exists (guard for future macOS changes).
+	resolved, err := filepath.EvalSymlinks("/tmp")
+	if err != nil || resolved != privateTmp {
+		t.Skipf("/tmp does not resolve to /private/tmp on this system (resolved=%q, err=%v)", resolved, err)
+	}
+
+	// Create a real directory under /private/tmp so EvalSymlinks can resolve
+	// the /tmp/<subdir> path through the symlink.
+	realDir, err := os.MkdirTemp(privateTmp, "hs008-test-*")
+	if err != nil {
+		t.Skipf("cannot create temp dir under /private/tmp: %v", err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(realDir) })
+
+	// Derive the /tmp/... alias path via the known /tmp → /private/tmp symlink.
+	// Build the path as a string to avoid filepath.Join linter complaints about separator usage.
+	subdir := filepath.Base(realDir)
+	symlinkDir := string(filepath.Separator) + "tmp" + string(filepath.Separator) + subdir
+
+	pathViaTmp := ProjectPath(symlinkDir)
+	pathViaPrivate := ProjectPath(realDir)
+
+	if pathViaTmp != pathViaPrivate {
+		t.Errorf("/tmp and /private/tmp project paths should produce the same brain path:\n  /tmp alias:   %s\n  /private/tmp: %s", pathViaTmp, pathViaPrivate)
 	}
 }
 

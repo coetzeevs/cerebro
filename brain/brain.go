@@ -32,10 +32,26 @@ func cerebroDir() string {
 	return filepath.Join(home, ".cerebro")
 }
 
-// ProjectPath returns the SQLite path for a project directory.
+// ProjectPath returns the SQLite path for a project directory, resolving
+// symlinks before hashing per Operational Ontology §5.14 rule 26 (HS-008).
+//
+// Behaviour: EvalSymlinks(filepath.Abs(projectDir)). If EvalSymlinks fails
+// (e.g. the path does not exist yet), the function falls back to the absolute
+// path with no symlink resolution, preserving pre-HS-008 hashing for that case.
+// This is intentional: a caller bootstrapping a brain for a path that does not
+// yet exist (CI runner pre-checkout, `cerebro pi-init` on a freshly-cloned repo
+// that pi-cerebro will later populate) still gets a deterministic hash.
+//
+// Order of resolution is Abs-then-EvalSymlinks (not EvalSymlinks-then-Abs)
+// because EvalSymlinks on a relative path is implementation-defined; running
+// Abs first gives EvalSymlinks an absolute starting point.
 func ProjectPath(projectDir string) string {
 	abs, _ := filepath.Abs(projectDir)
-	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(abs)))
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil {
+		resolved = abs // fall back to abs (pre-HS-008 behaviour) when path does not exist
+	}
+	hash := fmt.Sprintf("%x", sha256.Sum256([]byte(resolved)))
 	return filepath.Join(cerebroDir(), "projects", hash+".sqlite")
 }
 

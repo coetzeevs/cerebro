@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - `pi-init` subcommand emits a deterministic `pi.config.json` snippet for the `pi-cerebro` extension. Resolves the project path via `filepath.EvalSymlinks` per Ontology §5.14 (rule 26), verifies or creates the brain at `~/.cerebro/projects/<sha256(realpath)>.sqlite`, prints structured JSON to stdout, and emits status to stderr only. Idempotent: second run produces byte-identical output. [HS-007]
+- `cerebro migrate --realpath-hashes` consolidates legacy duplicate brains created before HS-008 by scanning project paths, recomputing the realpath-based hash, and either renaming the old brain file (Case A) or merging it into the realpath-keyed brain (Case C). Walks `$HOME` (or `--scan-root <path>`, repeatable) to `--max-depth 4` by default. `--dry-run` previews changes without mutating files. Mandatory backup of both source and destination before merge to `~/.cerebro/backups/migrate-<timestamp>/`. Acquires `~/.cerebro/migrate.lock` to prevent concurrent migration. Skips symlinked directories in the walk (CWE-59 guard). Idempotent — second run reports "Nothing to migrate". [HS-008]
+
+### Changed
+- `brain.ProjectPath` now resolves symlinks via `filepath.EvalSymlinks` before hashing (Operational Ontology §5.14, rule 26). On macOS, `cerebro -p /tmp/myproject` now opens the same brain as `cerebro -p /private/tmp/myproject`. Public Go signature is unchanged; behaviour for callers passing symlinked paths changes: their brains move to a new file on disk. Run `cerebro migrate --realpath-hashes` once to consolidate. Falls back to `filepath.Abs` for nonexistent paths (pre-HS-008 behaviour preserved for CI-bootstrap callers). Not BREAKING. [HS-008]
+- `internal/metrics.MetricsPath` now resolves symlinks via the same EvalSymlinks-with-fallback pattern as `brain.ProjectPath` (N1 stack-wide fold-in). Without this fix, `.metrics.sqlite` files for `/tmp/proj` and `/private/tmp/proj` would remain separate post-HS-008. Both functions are kept intentionally decoupled (separate implementations, same algorithm). [HS-008]
 
 ## [2.0.0] - 2026-05-16
 

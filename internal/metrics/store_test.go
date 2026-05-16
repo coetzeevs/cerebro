@@ -2,9 +2,29 @@ package metrics
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 )
+
+// TestMetricsPath_ResolvesSymlinks verifies that MetricsPath resolves symlinks
+// before hashing so that a symlinked project path and its realpath produce
+// identical metrics paths (HS-008 N1 stack-wide fold-in, mirrors TestProjectPath_ResolvesSymlinks).
+func TestMetricsPath_ResolvesSymlinks(t *testing.T) {
+	realDir := t.TempDir()
+	symlinkDir := filepath.Join(t.TempDir(), "symlink-project")
+
+	if err := os.Symlink(realDir, symlinkDir); err != nil {
+		t.Skipf("cannot create symlink: %v", err)
+	}
+
+	pathViaReal := MetricsPath(realDir)
+	pathViaSym := MetricsPath(symlinkDir)
+
+	if pathViaReal != pathViaSym {
+		t.Errorf("symlinked and real paths should produce the same metrics path:\n  real: %s\n  sym:  %s", pathViaReal, pathViaSym)
+	}
+}
 
 func TestInit_CreatesDatabase(t *testing.T) {
 	dir := t.TempDir()

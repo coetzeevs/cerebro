@@ -88,6 +88,7 @@ Run `cerebro config list` to see available settings. CLI flags always override b
 - Format flag: `--format md` (default) or `--format json`
 - Every PR must include a CHANGELOG.md entry in the same branch
 - Git tags must have a meaningful annotation summarizing the work shipped — don't just repeat the version number
+- `cerebro pi-init -p <dir>` emits a deterministic `pi.config.json` snippet for the `pi-cerebro` Pi extension; stdout is pure JSON, stderr carries status messages only (HS-007)
 
 ## Task Tracking with Beads
 

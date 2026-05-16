@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added
+- `pi-init` subcommand emits a deterministic `pi.config.json` snippet for the `pi-cerebro` extension. Resolves the project path via `filepath.EvalSymlinks` per Ontology §5.14 (rule 26), verifies or creates the brain at `~/.cerebro/projects/<sha256(realpath)>.sqlite`, prints structured JSON to stdout, and emits status to stderr only. Idempotent: second run produces byte-identical output. [HS-007]
+
 ## [2.0.0] - 2026-05-16
 
 ### Added

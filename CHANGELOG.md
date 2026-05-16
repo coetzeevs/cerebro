@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-05-16
+
 ### Added
 - `update`, `list`, `recall`: new `--subtype` flag for setting/filtering memory subtypes [OO-011]
   - `cerebro update <id> --subtype <value>` sets subtype on an existing node; stamps `updated_at`
@@ -23,6 +25,9 @@ All notable changes to this project will be documented in this file.
   `brain_test.go` ×2). External consumers (e.g. `qraftworx-cli`) must update their wrappers
   (follow-up ticket: QWX-001). [OO-011]
 - `AGENTS.md`: bump `Ontology version:` pin from `1.1` to `1.4` to reflect §7 rules 27, 28, 29, and 30 added in Ontology v1.2 → v1.4. No behavioural change in cerebro; satisfies the Ontology §9 "no project pin lags more than one minor version" invariant. [OO-012]
+
+### Migration
+- Go consumers calling `brain.Brain.Search(...)` or `brain.Brain.SearchWithGlobal(...)`: append `nil` as the final argument to preserve pre-2.0.0 semantics, or pass a `*string` pointing at the subtype to filter results post-scoring. Example: `b.Search(ctx, q, 10, 0.3, nil)`. See QWX-001 for a worked consumer-side absorption against `qraftworx-cli`.
 
 ## [1.13.0]
 

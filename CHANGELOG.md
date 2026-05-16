@@ -22,6 +22,7 @@ All notable changes to this project will be documented in this file.
   pre-OO-011 behaviour. All 5 in-repo callers updated (`cmd_search.go`, `cmd_recall.go` ×2,
   `brain_test.go` ×2). External consumers (e.g. `qraftworx-cli`) must update their wrappers
   (follow-up ticket: QWX-001). [OO-011]
+- `AGENTS.md`: bump `Ontology version:` pin from `1.1` to `1.4` to reflect §7 rules 27, 28, 29, and 30 added in Ontology v1.2 → v1.4. No behavioural change in cerebro; satisfies the Ontology §9 "no project pin lags more than one minor version" invariant. [OO-012]
 
 ## [1.13.0]
 

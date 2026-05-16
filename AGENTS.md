@@ -1,7 +1,7 @@
 # Agent Instructions
 
 <!-- ontology-stack-frame -->
-Ontology version: 1.1
+Ontology version: 1.4
 Stack classification: stack-frame (Cerebro is the Memory layer in the agentic stack)
 
 This project is part of the agentic stack; the operational ontology at `/Users/q/projects/agentic/documentation/Operational Ontology.md` is authoritative for any rule about cross-project responsibilities (memory vs tasks vs planning, runtime vs orchestration, etc.). Local rules below apply only to in-project behaviour and must not contradict the ontology. If a rule below conflicts with the ontology, the ontology wins and this file must be reconciled.

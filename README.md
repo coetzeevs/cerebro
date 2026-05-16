@@ -206,6 +206,28 @@ Constants: `brain.Episode`, `brain.Concept`, `brain.Procedure`, `brain.Reflectio
 |---------|-------------|
 | [QraftWorx CLI](https://github.com/coetzeevs/qraftworx-cli) | Go CLI for AI-powered content automation. Uses Gemini as reasoning engine and Cerebro as persistent memory. Imports `brain/` directly. |
 
+## Migration (HS-008 realpath hashing)
+
+From HS-008 onwards, `brain.ProjectPath` resolves symlinks before hashing. On macOS `/tmp` is a symlink to `/private/tmp`, so pre-HS-008 sessions started via `/tmp/myproject` created a different brain than sessions started via `/private/tmp/myproject`. The migration command consolidates these duplicates:
+
+```bash
+# Preview what would be migrated (no files changed)
+cerebro migrate --realpath-hashes --dry-run
+
+# Run the migration (idempotent; safe to run multiple times)
+cerebro migrate --realpath-hashes
+
+# Narrow the scan to a specific directory tree
+cerebro migrate --realpath-hashes --scan-root ~/projects --max-depth 3
+```
+
+The command walks `$HOME` (or `--scan-root`) to depth 4 by default, looking for project directories whose realpath hash differs from their unresolved-path hash. For each such directory:
+
+- **Case A** — only old-hash brain exists: renamed atomically to new hash (+ WAL companions)
+- **Case C** — both old and new hash exist: old brain is merged into new with `ConflictSkip` (destination wins), then deleted. Both are backed up to `~/.cerebro/backups/migrate-<timestamp>/` unconditionally before any mutation.
+
+A process-level lockfile (`~/.cerebro/migrate.lock`) prevents concurrent migration runs.
+
 ## Architecture
 
 Cerebro follows **Model B** (agent-managed memory): the AI agent decides what to store and retrieve. Cerebro is pure storage infrastructure with no LLM of its own. See [ADR-006](docs/adrs/ADR-006-claude-code-integration-pattern.md) for the rationale.

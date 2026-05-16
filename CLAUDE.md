@@ -89,6 +89,7 @@ Run `cerebro config list` to see available settings. CLI flags always override b
 - Every PR must include a CHANGELOG.md entry in the same branch
 - Git tags must have a meaningful annotation summarizing the work shipped — don't just repeat the version number
 - `cerebro pi-init -p <dir>` emits a deterministic `pi.config.json` snippet for the `pi-cerebro` Pi extension; stdout is pure JSON, stderr carries status messages only (HS-007)
+- `cerebro migrate --realpath-hashes` is the one-shot migration to consolidate pre-HS-008 duplicate brains created under unresolved-path hashes. Run once after upgrading to HS-008; idempotent. Use `--dry-run` first to preview. (HS-008)
 
 ## Task Tracking with Beads
 

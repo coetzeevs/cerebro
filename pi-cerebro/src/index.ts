@@ -9,7 +9,7 @@
  *   - `cerebro_remember` — persist a new memory via `cerebro add`
  *
  * And two lifecycle hooks:
- *   - `session_start` — runs `cerebro recall --boot` to prime recent memories
+ *   - `session_start` — runs `cerebro recall --prime` to prime recent memories
  *     into the agent's context at session start.
  *   - `message_end`   — heuristic compaction detector: observes
  *     `ctx.sessionManager.getEntries().length` and re-primes memories when

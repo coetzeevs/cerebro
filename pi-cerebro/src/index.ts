@@ -1,6 +1,6 @@
 /**
  * @file index.ts
- * @ticket HS-009
+ * @ticket HS-009, HS-010
  *
  * Pi extension entry point for pi-cerebro.
  *
@@ -8,9 +8,12 @@
  *   - `cerebro_recall`  — semantic memory recall via `cerebro recall`
  *   - `cerebro_remember` — persist a new memory via `cerebro add`
  *
- * And one lifecycle hook:
+ * And two lifecycle hooks:
  *   - `session_start` — runs `cerebro recall --boot` to prime recent memories
  *     into the agent's context at session start.
+ *   - `message_end`   — heuristic compaction detector: observes
+ *     `ctx.sessionManager.getEntries().length` and re-primes memories when
+ *     entries drop by more than 50% in a tick (HS-010).
  *
  * WHY FAIL-FAST?
  * If the `cerebro` binary is absent or fails the stale-shim check,
@@ -35,6 +38,7 @@ import {
   runRecall,
   sanitise,
 } from "./cerebro-cli.js";
+import { observeEntriesLength } from "./compaction.js";
 import { RecallParamsSchema, RememberParamsSchema } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -168,6 +172,49 @@ export default function piCerebro(pi: ExtensionAPI): void {
     } catch (err) {
       const msg = err instanceof Error ? sanitise(err.message) : "unknown error";
       console.error(`[pi-cerebro] session_start: boot prime failed — ${msg}`);
+    }
+  });
+
+  // -------------------------------------------------------------------------
+  // Hook: message_end — heuristic compaction detector (HS-010)
+  //
+  // Observes ctx.sessionManager.getEntries().length on every turn boundary.
+  // When entries drop by more than 50% in a single tick, logs the HS-016
+  // contract substring and re-primes memories via the existing runBootPrime()
+  // shell-out (same args as session_start).
+  //
+  // Cascading drops (e.g. 100 → 40 → 15) re-fire on each tick — deliberate per
+  // Architect Design §7 row 6. A future native session_compact subscription
+  // (per HS-010 Design §10) supersedes this when Pi exposes it cleanly.
+  //
+  // SAFETY: this handler MUST NOT throw or re-throw — an exception escaping
+  // message_end would block Pi's turn-end. The inner try/catch covers
+  // runBootPrime(); the outer structure returns undefined in all paths.
+  // -------------------------------------------------------------------------
+  pi.on("message_end", (_event, ctx) => {
+    const current = ctx.sessionManager.getEntries().length;
+    const { fired } = observeEntriesLength(current);
+
+    if (!fired) return;
+
+    // S-N7: log line is a static literal — no path interpolation, no
+    // sessionManager-derived values, no lastSeen/current integers.
+    // This exact substring is the HS-016 grep -F contract (Design §13).
+    console.error("[pi-cerebro] compaction detected: re-priming memories");
+
+    const projectDir = resolveProjectDir();
+    if (!projectDir) {
+      console.warn("[pi-cerebro] compaction re-prime: no CLAUDE_PROJECT_DIR — skipping.");
+      return;
+    }
+
+    try {
+      const { primedCount } = runBootPrime(projectDir, binary);
+      console.error(`[pi-cerebro] compaction re-prime: primed ${primedCount} memories.`);
+    } catch (err) {
+      // S-N2: narrow err to Error before accessing .message; sanitise mandatory.
+      const msg = err instanceof Error ? sanitise(err.message) : "unknown error";
+      console.error(`[pi-cerebro] compaction re-prime failed — ${msg}`);
     }
   });
 }

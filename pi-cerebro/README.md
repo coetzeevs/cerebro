@@ -38,6 +38,49 @@ The extension reads `CLAUDE_PROJECT_DIR` (set by Pi at session start) to determi
 }
 ```
 
+## Compaction detection (heuristic)
+
+pi-cerebro registers a `message_end` hook that watches
+`ctx.sessionManager.getEntries().length` on every turn boundary. When the
+count drops by **more than 50%** in a single tick, the detector treats this as
+a probable context compaction and re-primes memories.
+
+### Threshold
+
+```typescript
+export const COMPACTION_DROP_RATIO = 0.5; // src/compaction.ts
+```
+
+Strict `>` (not `>=`): an exactly 50% drop does NOT fire. Per Operational
+Ontology §5.5 Decision Q1.
+
+### Log-line contract (HS-016 binding)
+
+On detection, this exact substring is emitted to stderr:
+
+```
+[pi-cerebro] compaction detected: re-priming memories
+```
+
+`HS-016/validate-cerebro-pi.sh` greps for this verbatim (`grep -F`). The
+substring is a compile-time static literal — no path or session-state values
+are interpolated into it.
+
+### Cascading drops
+
+Consecutive drops (e.g. 100 → 40 → 15) re-fire on each tick. This is
+deliberate: each tick re-evaluates from the most recent `lastSeen` value, so
+a 40→15 drop (62%) is itself a compaction signal. The idempotent `cerebro
+recall --boot` call is safe to repeat; deduplication is deferred until Pi
+exposes `session_compact` natively (Architect Design §10 future fold-in).
+
+### Future fold-in
+
+Pi v0.x exposes `session_compact` and `session_before_compact` events natively
+(`types.d.ts:402, 410`). Once HS-010 + HS-016 stabilise, a follow-up ticket
+can replace the heuristic with the native event while preserving the log-line
+contract above.
+
 ## Fail-fast behaviour
 
 At extension load time, pi-cerebro resolves `cerebro` from PATH once and validates its version output matches `/\d+\.\d+/`. If the binary is absent or fails validation (stale shim), the extension logs an error to stderr and **registers nothing** — Pi continues without cerebro capability rather than crashing.

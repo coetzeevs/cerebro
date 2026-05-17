@@ -266,7 +266,7 @@ export function runAdd(
 }
 
 /**
- * Run `cerebro recall --boot -p <projectDir>` to prime memories at session
+ * Run `cerebro recall --prime -p <projectDir>` to prime memories at session
  * start.
  *
  * Parses the primed count from the output line matching `primed: N memories`
@@ -282,7 +282,7 @@ export function runBootPrime(projectDir: string, binaryPath: string): BootPrimeR
   try {
     stdout = execFileSync(
       binaryPath,
-      ["recall", "--boot", "-p", projectDir],
+      ["recall", "--prime", "-p", projectDir],
       { stdio: "pipe", timeout: 20000 }
     ).toString();
   } catch (err: unknown) {
@@ -290,7 +290,7 @@ export function runBootPrime(projectDir: string, binaryPath: string): BootPrimeR
     const exitCode = spawnErr.status ?? null;
     const stderr = spawnErr.stderr?.toString() ?? "";
     throw new Error(
-      `[pi-cerebro] cerebro recall --boot failed (exit ${exitCode}): ${sanitise(stderr || (err instanceof Error ? err.message : String(err)))}`
+      `[pi-cerebro] cerebro recall --prime failed (exit ${exitCode}): ${sanitise(stderr || (err instanceof Error ? err.message : String(err)))}`
     );
   }
 

@@ -77,7 +77,7 @@ test("session_start: invokes boot prime when CLAUDE_PROJECT_DIR is set", async (
   const handler = mockPi._hooks["session_start"];
   assert.ok(handler, "session_start handler must be registered");
 
-  // Should not throw — stub cerebro handles --boot flag
+  // Should not throw — stub cerebro handles --prime flag
   await assert.doesNotReject(
     async () => handler({ type: "session_start", reason: "startup" })
   );

@@ -10,7 +10,7 @@ Registers two LLM-callable tools and one session lifecycle hook in the Pi coding
 |---|---|
 | `cerebro_recall` | Semantic memory search via `cerebro recall` |
 | `cerebro_remember` | Persist a new memory via `cerebro add` |
-| `session_start` hook | Boot-primes recent memories into context via `cerebro recall --boot` |
+| `session_start` hook | Boot-primes recent memories into context via `cerebro recall --prime` |
 
 ## Requirements
 
@@ -71,7 +71,7 @@ are interpolated into it.
 Consecutive drops (e.g. 100 → 40 → 15) re-fire on each tick. This is
 deliberate: each tick re-evaluates from the most recent `lastSeen` value, so
 a 40→15 drop (62%) is itself a compaction signal. The idempotent `cerebro
-recall --boot` call is safe to repeat; deduplication is deferred until Pi
+recall --prime` call is safe to repeat; deduplication is deferred until Pi
 exposes `session_compact` natively (Architect Design §10 future fold-in).
 
 ### Future fold-in

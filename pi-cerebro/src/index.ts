@@ -1,6 +1,6 @@
 /**
  * @file index.ts
- * @ticket HS-009, HS-010
+ * @ticket HS-009, HS-010, HS-039
  *
  * Pi extension entry point for pi-cerebro.
  *
@@ -14,6 +14,12 @@
  *   - `message_end`   — heuristic compaction detector: observes
  *     `ctx.sessionManager.getEntries().length` and re-primes memories when
  *     entries drop by more than 50% in a tick (HS-010).
+ *
+ * HS-039: cerebro_remember reads currentBeadsId from Meepo's session-context
+ * substrate (subagents.db) via readCurrentBeadsId() and passes it to runAdd
+ * as the new beadsId parameter. When non-null, runAdd appends --beads-id to
+ * the cerebro add argv, tagging the persisted memory with the active beads
+ * task id. Best-effort: null currentBeadsId → no tag, no error (AC3 back-compat).
  *
  * WHY FAIL-FAST?
  * If the `cerebro` binary is absent or fails the stale-shim check,
@@ -39,6 +45,7 @@ import {
   sanitise,
 } from "./cerebro-cli.js";
 import { observeEntriesLength } from "./compaction.js";
+import { readCurrentBeadsId } from "./session-context-reader.js";
 import { RecallParamsSchema, RememberParamsSchema } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -138,8 +145,13 @@ export default function piCerebro(pi: ExtensionAPI): void {
       const type = params.type ?? "episode";
       const importance = params.importance ?? 0.75;
 
+      // HS-039: read currentBeadsId from Meepo's session-context substrate.
+      // Best-effort: null means no beadsId tag (AC3 back-compat). Any read
+      // error is swallowed inside readCurrentBeadsId() with a sanitised warning.
+      const beadsId = readCurrentBeadsId();
+
       try {
-        const { nodeId } = runAdd(params.content, projectDir, type, importance, binary);
+        const { nodeId } = runAdd(params.content, projectDir, type, importance, binary, beadsId);
         const idStr = nodeId ? ` (id: ${nodeId})` : "";
         const text = `Memory stored${idStr}.`;
         return {

@@ -214,7 +214,8 @@ export function runRecall(
 }
 
 /**
- * Run `cerebro add <content> -p <projectDir> --type <type> --importance <imp>`.
+ * Run `cerebro add <content> -p <projectDir> --type <type> --importance <imp>
+ *      [--beads-id <beadsId>]`.
  *
  * Parses the new node ID from stdout (format: `<hex-id> [type] ...`).
  * Security: nodeId captured by a bounded hex regex to prevent injection
@@ -225,29 +226,40 @@ export function runRecall(
  * @param type        Node type (default "episode").
  * @param importance  Importance weight 0.0–1.0 (default 0.75).
  * @param binaryPath  Path to the cerebro binary.
+ * @param beadsId     Optional beads task id for forensic linkage (HS-039).
+ *                    When non-null and non-empty, appended as ["--beads-id", beadsId]
+ *                    via argv-array discipline (TL-N2 — NOT inline-concat form).
+ *                    Trim+validation is the Go CLI layer's responsibility (N-S1);
+ *                    this belt-and-braces guard skips the flag if beadsId is empty.
  */
 export function runAdd(
   content: string,
   projectDir: string,
   type: string = "episode",
   importance: number = 0.75,
-  binaryPath: string
+  binaryPath: string,
+  beadsId: string | null = null
 ): AddResult {
+  // TL-N2: argv-array discipline — build the base argv, then conditionally
+  // push ["--beads-id", beadsId] as SEPARATE tokens. Never inline-concat.
+  const argv = [
+    "add",
+    content,
+    "-p",
+    projectDir,
+    "--type",
+    type,
+    "--importance",
+    String(importance),
+  ];
+  if (beadsId !== null && beadsId !== "") {
+    argv.push("--beads-id", beadsId);
+  }
   try {
-    const stdout = execFileSync(
-      binaryPath,
-      [
-        "add",
-        content,
-        "-p",
-        projectDir,
-        "--type",
-        type,
-        "--importance",
-        String(importance),
-      ],
-      { stdio: "pipe", timeout: 15000 }
-    ).toString();
+    const stdout = execFileSync(binaryPath, argv, {
+      stdio: "pipe",
+      timeout: 15000,
+    }).toString();
 
     // S-N3: bounded hex capture — 8 to 64 hex chars, anchored at start of line.
     // Defends against arbitrary output from a compromised or stubbed binary.

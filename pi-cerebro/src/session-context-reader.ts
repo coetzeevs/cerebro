@@ -57,9 +57,25 @@ import { sanitise } from "./cerebro-cli.js";
  *
  * @returns The currentBeadsId string, or null if unavailable.
  */
+// N-S2: agentId is used as a SQL parameter (no injection risk), but we still
+// length-cap and alphabet-restrict to prevent oversized or malformed values
+// from reaching the DB. Regex [A-Za-z0-9_-]{1,256} matches Meepo's agent-id
+// format (childRuntimeEnvironment.childId) and caps at 256 chars.
+const AGENT_ID_PATTERN = /^[A-Za-z0-9_-]{1,256}$/;
+
 export function readCurrentBeadsId(): string | null {
-  // N-S2 / TL-N9: || guard catches empty string (not just undefined/null)
-  const agentId = process.env["PI_TMUX_AGENTS_CHILD_ID"]?.trim() || null;
+  // TL-N9: || guard catches empty string (not just undefined/null)
+  const rawAgentId = process.env["PI_TMUX_AGENTS_CHILD_ID"]?.trim() || null;
+  if (!rawAgentId) return null;
+
+  // N-S2: length-cap + alphabet restriction — best-effort sanitise
+  if (!AGENT_ID_PATTERN.test(rawAgentId)) {
+    console.warn(
+      `[pi-cerebro] PI_TMUX_AGENTS_CHILD_ID format unexpected (best-effort, no beadsId tag): ${sanitise(rawAgentId)}`
+    );
+    return null;
+  }
+  const agentId = rawAgentId;
   if (!agentId) return null;
 
   let db: DatabaseSync | null = null;

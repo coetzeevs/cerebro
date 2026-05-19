@@ -1,7 +1,29 @@
 package main
 
+// cmd_add.go — `cerebro add` subcommand.
+//
+// --beads-id flag (HS-039): attaches a structured beadsId to the memory's metadata
+// column via brain.WithMetadata(json.RawMessage). This replaces HS-030's prompt-side
+// BD_ID embedding with a code-side, Wire-deterministic tag.
+//
+// N-S1 validation (HS-029 canonical regex, byte-identical to validate-hello-stack.sh:243
+// and validate-meepo-beads-link.sh:79):
+//   - Empty / whitespace-only post-trim → flag treated as absent (no metadata write)
+//   - Non-empty + non-matching → CLI error with canonical pattern in message
+//
+// Stale-metadata merge contract (§2 forward-compatibility):
+// If a future --metadata flag is added, beadsId MUST WIN on key collision.
+// This contract is locked here so the next ticket adding --metadata doesn't
+// need to re-derive the policy.
+//
+// JSON encoding uses json.Marshal (NOT fmt.Sprintf) — the beadsId value arrives
+// from the session-context substrate and is bounded by the HS-029 regex above,
+// but json.Marshal provides defence-in-depth JSON-escaping regardless (TL-N3).
+
 import (
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/coetzeevs/cerebro/brain"
@@ -13,6 +35,18 @@ var addTypeFlag string
 var addImportanceFlag float64
 var addSubtypeFlag string
 
+// addBeadsIdFlag holds the --beads-id flag value (raw, pre-trim).
+// N-S1: trimmed and validated against beadsIdRegexp before use.
+var addBeadsIdFlag string
+
+// beadsIdRegexp is the HS-029 canonical regex, byte-identical to:
+//
+//	validate-hello-stack.sh:243  ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$
+//	validate-meepo-beads-link.sh:79 BD_ID_REGEX='^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$'
+//
+// Propagation site 3: pi-cerebro / cerebro add CLI (HS-039; memory 9137a398).
+var beadsIdRegexp = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$`)
+
 func init() {
 	cmd := &cobra.Command{
 		Use:   "add <content>",
@@ -23,6 +57,9 @@ func init() {
 	cmd.Flags().StringVarP(&addTypeFlag, "type", "t", "episode", "Memory type: episode, concept, procedure, reflection")
 	cmd.Flags().Float64VarP(&addImportanceFlag, "importance", "i", 0.5, "Importance score (0.0-1.0)")
 	cmd.Flags().StringVar(&addSubtypeFlag, "subtype", "", "Memory subtype")
+	// --beads-id: optional beads task id for forensic linkage (HS-039).
+	// Value is trimmed and validated against the HS-029 canonical regex before persisting.
+	cmd.Flags().StringVar(&addBeadsIdFlag, "beads-id", "", "Beads task id to tag this memory with (forensic linkage); must match ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$")
 	rootCmd.AddCommand(cmd)
 }
 
@@ -45,6 +82,25 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if addSubtypeFlag != "" {
 		opts = append(opts, brain.WithSubtype(addSubtypeFlag))
 	}
+
+	// N-S1 (HS-039): trim first, then validate.
+	// Canonical trim location is the Go CLI layer (HS-031 / TL-N1 precedent).
+	// TS-side runAdd also guards but the canonical enforcement is here.
+	beadsId := strings.TrimSpace(addBeadsIdFlag)
+	if beadsId != "" {
+		// Non-empty post-trim: validate against HS-029 canonical regex.
+		if !beadsIdRegexp.MatchString(beadsId) {
+			return fmt.Errorf("invalid --beads-id: must match canonical pattern ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$")
+		}
+		// JSON encoding via json.Marshal — NOT fmt.Sprintf — per TL-N3.
+		// This is defence-in-depth; the regex above already bounds the value.
+		meta, err := json.Marshal(map[string]string{"beadsId": beadsId})
+		if err != nil {
+			return fmt.Errorf("encoding beadsId metadata: %w", err)
+		}
+		opts = append(opts, brain.WithMetadata(json.RawMessage(meta)))
+	}
+	// Empty post-trim → flag treated as absent. No WithMetadata call. AC3 back-compat.
 
 	id, err := b.Add(content, store.NodeType(nodeType), opts...)
 	if err != nil {

@@ -45,7 +45,7 @@ import {
   sanitise,
 } from "./cerebro-cli.js";
 import { observeEntriesLength } from "./compaction.js";
-import { readCurrentBeadsId } from "./session-context-reader.js";
+import { enforceCerebroBoundBeadsId, readCurrentBeadsId } from "./session-context-reader.js";
 import { RecallParamsSchema, RememberParamsSchema } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -149,6 +149,12 @@ export default function piCerebro(pi: ExtensionAPI): void {
       // Best-effort: null means no beadsId tag (AC3 back-compat). Any read
       // error is swallowed inside readCurrentBeadsId() with a sanitised warning.
       const beadsId = readCurrentBeadsId();
+
+      // HS-046 boundary enforcement gate — placed AFTER effectiveBeadsId resolution
+      // and BEFORE runAdd subprocess launch (S-N2: block not parameterise).
+      // Throws if session is bound (currentBeadsId non-null) AND effective beadsId
+      // is null/empty. Unbound sessions pass through unchanged (AC3 back-compat).
+      enforceCerebroBoundBeadsId(beadsId);
 
       try {
         const { nodeId } = runAdd(params.content, projectDir, type, importance, binary, beadsId);

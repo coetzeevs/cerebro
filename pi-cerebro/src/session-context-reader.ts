@@ -1,6 +1,6 @@
 /**
  * @file session-context-reader.ts
- * @ticket HS-039
+ * @ticket HS-039, HS-046
  *
  * Cross-extension read helper: reads the calling agent's `currentBeadsId` slot
  * from Meepo's session-context substrate (subagents.db) and returns it for
@@ -34,6 +34,19 @@
  * WRITE BOUNDARY
  * This module is READ-ONLY. It exports NO setSlot or write helpers. Writes to
  * session_contexts are owned by slot-owner extensions only (pi-beads via HS-037).
+ *
+ * BOUNDARY ENFORCEMENT (HS-046)
+ * enforceCerebroBoundBeadsId() is the memory-write gate: if the calling agent's
+ * session has a currentBeadsId binding (non-null from readCurrentBeadsId()) AND
+ * the effective beadsId for the write is null or empty, it throws a hard error
+ * with CEREBRO_BEADS_ENFORCEMENT_ERROR. This mirrors HS-045's enforceBoundBeadsId
+ * at the Meepo MCP boundary.
+ *
+ * TRUST-SPLIT NOTE (S-N1 / OO-014 §7.1)
+ * HS-029 regex is validated at the writer boundary (HS-037 pi-beads + TypeBox in
+ * HS-039). This module trusts the substrate: it reads what was written and does
+ * NOT re-validate the beadsId format on the read path. The enforcement predicate
+ * cares only about presence/absence (null vs non-null), not format.
  *
  * @returns The currentBeadsId for the calling agent, or null if unavailable.
  */
@@ -103,4 +116,90 @@ export function readCurrentBeadsId(): string | null {
       // ignore close errors
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// HS-046 Boundary enforcement helpers
+// Sibling to HS-045's enforceBoundBeadsId at the Meepo MCP boundary.
+// These are INTERNAL to pi-cerebro — not part of the Pi-facing tool API (S-N4).
+// ---------------------------------------------------------------------------
+
+/**
+ * Static error template for the memory-write boundary enforcement gate.
+ *
+ * AC2 exact literal (OO-014 §7.1, HS-046). The `<id>` placeholder is
+ * substituted by formatCerebroBeadsEnforcementError(). No template literals —
+ * static String.replace() only, preserving testable byte-identity.
+ *
+ * TRUST-SPLIT (S-N1): format validated at writer (HS-037/TypeBox). This
+ * const is message-only; it does NOT re-validate the id.
+ *
+ * bd_clear is forward-looking — see HS-050 backlog (TL-PI-N5).
+ *
+ * @internal HS-046
+ */
+export const CEREBRO_BEADS_ENFORCEMENT_ERROR =
+  "Cannot create unlinked memory: session is bound to bd ticket <id>. " +
+  "Pass beadsId explicitly OR call bd_clear to release the session binding.";
+
+/**
+ * Produce the enforcement error message for the given bound beadsId.
+ *
+ * Uses String.replace() on the `<id>` placeholder in CEREBRO_BEADS_ENFORCEMENT_ERROR.
+ * No template literals. No branches. Mirrors HS-045's formatBeadsEnforcementError.
+ *
+ * @internal HS-046
+ * @param currentBeadsId - The binding id returned by readCurrentBeadsId().
+ * @returns Formatted error string with `<id>` replaced by currentBeadsId.
+ */
+export function formatCerebroBeadsEnforcementError(currentBeadsId: string): string {
+  return CEREBRO_BEADS_ENFORCEMENT_ERROR.replace("<id>", currentBeadsId);
+}
+
+/**
+ * Boundary-enforcement gate for the cerebro_remember memory-write path.
+ *
+ * Throws if BOTH conditions hold:
+ *   1. The effective beadsId for the write is null or empty (TL-PI-N1 / S-N8:
+ *      `effectiveBeadsId == null || effectiveBeadsId === ""`).
+ *   2. The calling agent's session has a non-null currentBeadsId binding
+ *      (readCurrentBeadsId() returns non-null).
+ *
+ * Unbound sessions (readCurrentBeadsId() returns null) pass through unchanged —
+ * AC3 back-compat (HS-039) is fully preserved.
+ *
+ * DOUBLE-READ NOTE (TL-PI-N2): readCurrentBeadsId() performs a SQLite read.
+ * In the cerebro_remember execute handler this means the DB is read twice:
+ * once at line `const beadsId = readCurrentBeadsId()` to resolve the effective
+ * beadsId, and once here inside enforceCerebroBoundBeadsId() for the binding
+ * check. Both reads target the same session_contexts row; the second read is
+ * an intentional design choice to keep enforcement logic self-contained and
+ * avoid passing the binding as a parameter (which would require callers to
+ * track it separately). The gate is called BEFORE runAdd so any binding
+ * mismatch throws BEFORE any subprocess is launched (S-N2: block not parameterise).
+ *
+ * NEVER-THROWS NOTE (TL-PI-N6): readCurrentBeadsId() is best-effort and
+ * never throws to the caller — all errors inside it are caught and return null
+ * with a sanitised console.warn. enforceCerebroBoundBeadsId() inherits this
+ * guarantee: if the DB read fails, binding = null and no enforcement fires.
+ *
+ * OWASP A03/A04/A05 (S-N5): no injection surface (predicate-only, no SQL in
+ * this function), no privilege escalation, gate fires before subprocess launch.
+ *
+ * @internal HS-046
+ * @param effectiveBeadsId - The resolved beadsId for this write (params.beadsId
+ *   ?? readCurrentBeadsId() resolved in the execute handler). May be null or "".
+ * @throws Error with formatCerebroBeadsEnforcementError message when gate fires.
+ */
+export function enforceCerebroBoundBeadsId(
+  effectiveBeadsId: string | null | undefined
+): void {
+  // TL-PI-N1 / S-N8: twin-check — null AND empty-string both count as "absent"
+  if (effectiveBeadsId != null && effectiveBeadsId !== "") return;
+
+  // Gate only fires when session has an active binding
+  const binding = readCurrentBeadsId();
+  if (binding == null) return;
+
+  throw new Error(formatCerebroBeadsEnforcementError(binding));
 }

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed [HS-020]
+
+- Added `pi-cerebro/.npmrc` at project root with three hardened defaults: `audit-level=moderate` (gates `npm audit --audit-level=moderate` exit code — see S-LOW-1 note below), `engine-strict=true` (enforces `engines.node >=24.0.0` at `npm install`/`npm ci` time), `ignore-scripts=true` (suppresses transitive postinstall scripts). File is byte-identical (sha256: `6c40bb0881cd2146f534c67fbf1cbb0db6d42cf465c43b5f434dd26be488ebdd`) across all four repos per S-INFO-3 and AC5 (no `registry=` / no `_authToken`). Discharges HS-001 Security Review deferred-audit item 6. Cross-repo engine divergence (intentional): pi-cerebro `>=24.0.0` (node:sqlite requires Node 24 unflagged, HS-039); pi-claude-code-cli `>=22.6.0` (`@types/node: ^22.0.0`). **S-LOW-1 note (npm 8+ semantics):** In npm 8+, `audit-level=moderate` gates `npm audit` exit code, NOT `npm install`/`npm ci`. AC1 is satisfied via `npm audit --audit-level=moderate --omit=dev`. [HS-020]
+
 ### Added [HS-046]
 
 - pi-cerebro: `cerebro_remember` now enforces strict-reject when calling agent's session has a `currentBeadsId` binding but the effective beadsId for the write is NULL — sibling enforcement to HS-045 at the memory-write boundary. Hard MCP error replaces silent untagged storage. Error message: `Cannot create unlinked memory: session is bound to bd ticket <id>. Pass beadsId explicitly OR call bd_clear to release the session binding.` (`bd_clear` is forward-looking — see HS-050 backlog.) Implementation: new `enforceCerebroBoundBeadsId` + `CEREBRO_BEADS_ENFORCEMENT_ERROR` const + `formatCerebroBeadsEnforcementError` helpers in `pi-cerebro/src/session-context-reader.ts`. Gate fires only when session is bound — unbound sessions proceed unchanged (HS-039 back-compat). 5 new tests in `pi-cerebro/tests/cerebro-remember-enforcement.test.mjs`. [HS-046]

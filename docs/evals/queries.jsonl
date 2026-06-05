@@ -1,0 +1,10 @@
+{"id":"q01","query":"composite scoring formula relevance importance recency structural weights","note":"retrieve memories about the cerebro composite scorer formula and weight values"}
+{"id":"q02","query":"Brain.Search API limit threshold subtypeFilter parameter","note":"retrieve memories describing the Brain.Search Go function signature and pipeline"}
+{"id":"q03","query":"gc threshold eviction archived memories recovery","note":"retrieve memories about cerebro garbage collection threshold semantics and recovery"}
+{"id":"q04","query":"session start compaction detection re-prime memories","note":"retrieve memories about compaction heuristic and re-priming behaviour"}
+{"id":"q05","query":"beads issue tracking workflow task claim close","note":"retrieve memories about the beads local issue tracker and its workflow"}
+{"id":"q06","query":"GitHub Flow branch pull request admin merge cerebro","note":"retrieve memories about the cerebro GitHub Flow merge discipline"}
+{"id":"q07","query":"pi-cerebro TypeScript extension session_start hook","note":"retrieve memories about the pi-cerebro Pi extension and session boot"}
+{"id":"q08","query":"subtype filter post scoring OO-011 cerebro","note":"retrieve memories about the OO-011 subtype filter feature implementation"}
+{"id":"q09","query":"ADR architectural decision record cerebro design","note":"retrieve memories about architectural decisions recorded in cerebro ADRs"}
+{"id":"q10","query":"noop embedder test early return Brain.Search unit test","note":"retrieve memories about the testability pattern for Brain.Search without Ollama"}

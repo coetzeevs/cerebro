@@ -1,0 +1,8 @@
+# S-INFO-1: Defense-in-depth guard — prevent raw brain DB blobs from being committed.
+# Option A (frozen-brain-snapshot) was explicitly rejected in the agentic-x183 Design
+# precisely to avoid committing raw SQLite blobs. This .gitignore ensures that a
+# careless --out *.sqlite or a copied brain can never be accidentally staged here.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal

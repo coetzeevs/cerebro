@@ -1,0 +1,26 @@
+{
+  "generated_at": "2026-06-02T15:17:57Z",
+  "brain": {
+    "schema_version": "2",
+    "active_nodes": 538,
+    "embedding_model": "nomic-embed-text",
+    "dimensions": 768
+  },
+  "scorer_weights": {
+    "relevance": 0.35,
+    "importance": 0.25,
+    "recency": 0.25,
+    "structural": 0.15
+  },
+  "params": {
+    "limit": 20,
+    "threshold": 0.3,
+    "queries": 10
+  },
+  "metrics": {
+    "recall@5": 0.7833333333333333,
+    "recall@10": 0.8166666666666667,
+    "recall@20": 0.8166666666666667,
+    "MRR": 0.7083333333333333
+  }
+}

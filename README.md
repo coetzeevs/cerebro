@@ -181,6 +181,7 @@ Available settings:
 | `recall_threshold` | 0.3 | Min similarity for `recall` query mode |
 | `rerank_enabled` | `false` | Enable local cross-encoder reranking of recall candidates (see below) |
 | `rerank_command` | _(empty)_ | Local reranker subprocess; empty falls back to `CEREBRO_RERANK_COMMAND` env or disables |
+| `rerank_fusion` | `rrf` | Combine mode when reranking is on: `rrf` (Reciprocal Rank Fusion) or `reorder` (legacy pure-reorder) |
 
 Config values travel with the brain — they are preserved across `export`/`import`.
 
@@ -190,7 +191,19 @@ Reranking is **off by default**; when off, recall is byte-identical to the
 pre-rerank pipeline. When enabled, `recall`/`search` over-retrieve a wider
 candidate set by composite score, rerank it with a local cross-encoder, and cut
 to the limit (`≤10` typical) — so the most relevant memories rank highest. The
-composite scorer weights are unchanged; reranking only reorders the final cut.
+composite scorer weights are unchanged; reranking only governs the final
+ordering of the cut.
+
+**Combine mode (`rerank_fusion`).** The reranker ranking is combined with the
+composite ranking in one of two ways. The default, **`rrf`** (Reciprocal Rank
+Fusion, `fused = 1/(60+rank_composite) + 1/(60+rank_reranker)`), fuses both
+rankings so a composite-strong item the cross-encoder demotes still survives the
+cut — this recovers a recall@10 dip that pure-reorder exhibits. **`reorder`**
+(legacy) sorts by the reranker score alone, discarding the composite order
+(maximises MRR at some cost to recall@10). See
+[`docs/evals/rerank-results.md`](docs/evals/rerank-results.md) and
+[ADR-012](docs/adrs/ADR-012-cross-encoder-reranking.md) for the measured
+tradeoff. Switch with `cerebro config set rerank_fusion reorder -p <brain>`.
 
 cerebro bundles **no model.** You supply a local reranker subprocess that reads a
 JSON request on stdin and writes a JSON response on stdout:

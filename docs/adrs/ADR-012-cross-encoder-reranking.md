@@ -124,12 +124,78 @@ Trust is operator→operator on a single-operator workstation (the operator owns
 both the brain and the command). Re-grades to MEDIUM/HIGH if cerebro becomes
 multi-tenant or `rerank_command` becomes non-owner-settable (S-INFO-1).
 
+## Combine mode: Reciprocal Rank Fusion (RRF) by default, not pure-reorder
+
+The initial implementation combined the cross-encoder result with the composite
+result by **pure-reorder**: sort the over-retrieved candidate set by the reranker
+score alone and cut. The first apples-to-apples eval (same 549-node brain,
+deterministic N=3) showed the expected MRR win (`+0.30`) and recall@5 win
+(`+0.17`), but **recall@10 dipped `-0.0167`**. Investigation (operator-directed,
+before accepting the dip) confirmed the cause: pure-reorder *discards the
+composite order entirely*, so the cross-encoder can demote a composite-strong,
+recall@10-relevant item below the cut while it lifts the single best item — the
+exact MRR-up / recall@10-down signature. The per-query trace pinpointed the
+single ground-truth memory the reranker dropped from the top-10.
+
+The fix is **rank fusion**: combine the composite ranking and the reranker
+ranking instead of replacing one with the other. We adopt **Reciprocal Rank
+Fusion** (Cormack, Clarke & Buettcher, *Reciprocal Rank Fusion outperforms
+Condorcet and individual Rank Learning Methods*, SIGIR 2009) — parameter-free and
+robust:
+
+```
+fused(node) = 1/(k + rank_composite(node)) + 1/(k + rank_reranker(node))    # k = 60
+```
+
+with ranks starting at 1. `k=60` is the standard constant and the default
+`rank_constant` in production engines (validated via context7 against the
+Elasticsearch `rrf` retriever docs:
+`reference/elasticsearch/rest-apis/reciprocal-rank-fusion.md` — default 60,
+must be ≥1). Because both rankings cover the *same* candidate set, every node
+contributes from both terms, so a composite-top item the reranker buries keeps
+its strong `1/(k+1)` composite term and survives the cut.
+
+**Measured (same 550-node dogfooded brain, reference MiniLM cross-encoder,
+deterministic N=3; full table in `docs/evals/rerank-results.md`):** RRF lifts
+recall@10 to `0.8333` — **above** the disabled baseline `0.7833` and well above
+pure-reorder's `0.7667` — while still improving MRR (`0.5033 → 0.6825`). RRF is
+therefore the principled win: it recovers the recall@10 dip and holds an MRR
+improvement, regardless of corpus size. The tradeoff is that RRF's MRR gain is
+smaller than pure-reorder's (`+0.18` vs `+0.35`): fusion tempers the
+cross-encoder's aggressive top-1 promotion with the composite rank, which is the
+intended, more balanced behaviour.
+
+**Decision:** RRF (`rerank_fusion="rrf"`) is the default combine mode when
+reranking is enabled. The legacy pure-reorder (`rerank_fusion="reorder"`) is
+retained behind the config key for A/B comparison and for operators who want the
+cross-encoder ranking verbatim. The combine mode is a brain-config decision (no
+env toggle), mirroring `rerank_enabled`.
+
+A *weighted blend* (`α·norm(rerank) + (1-α)·norm(composite)`) was considered as
+an alternative but not implemented: RRF is parameter-free and already recovers
+recall@10 above parity, so the tunable α (and the score-normalisation it
+requires) is unjustified complexity for this corpus. It remains a future option
+if a larger corpus shows RRF leaving MRR on the table.
+
+## Corpus-granularity caveat (low-confidence tuning surface)
+
+The eval corpus is 10 queries / ~20 ground-truth nodes. At that size recall@10
+resolves to roughly **one node** (≈0.033–0.05 macro per node), so the original
+`-0.0167` swing is *sub-single-node* — i.e. within measurement noise for this
+corpus. Any combine-mode tuning result on THIS corpus is therefore low-confidence
+in magnitude. RRF is adopted on the **principled** grounds above (it fuses rather
+than discards a ranking, and it recovers recall@10 to parity-or-better while
+holding MRR) — not because the numeric delta on this small corpus is itself
+decisive. Growing the eval corpus is the right follow-up before drawing
+high-confidence conclusions about α-blend vs RRF or about the exact `k`.
+
 ## Consequences
 
-- New `internal/rerank/` package; `rerank_enabled`/`rerank_command` config keys;
-  the reranker composes inside `Brain.Search`/`SearchWithGlobal`, so `cerebro
-  eval` and `cerebro recall` exercise it with no command-layer change.
-- `compositeScore` weights are untouched (out of scope) — the reranker reorders
-  the already-scored candidate set; it does not recompute any composite score.
+- New `internal/rerank/` package; `rerank_enabled`/`rerank_command`/`rerank_fusion`
+  config keys; the reranker composes inside `Brain.Search`/`SearchWithGlobal`, so
+  `cerebro eval` and `cerebro recall` exercise it with no command-layer change.
+- `compositeScore` weights are untouched (out of scope) — the reranker and the
+  fusion reorder the already-scored candidate set; they do not recompute any
+  composite score. The composite `ScoredNode.Score` is preserved on every node.
 - Single-shot exec per query (no persistent reranker daemon) is accepted for a
   recall-quality lever; a daemon optimisation is a future ticket if latency hurts.

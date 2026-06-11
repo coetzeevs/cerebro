@@ -290,6 +290,13 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
+	// Reranking is OFF by default (agentic-2ixw). When disabled, this is the
+	// exact pre-rerank path: VectorSearch(limit) → ExpandGraph(limit) → filter,
+	// so eval metrics are byte-identical to the baseline by construction (AC2b).
+	if resolveRerankEnabled(b.store) {
+		return b.searchReranked(ctx, query, vec, limit, threshold, subtypeFilter)
+	}
+
 	results, err := b.store.VectorSearch(vec, limit, threshold)
 	if err != nil {
 		return nil, err
@@ -304,6 +311,31 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 	// composite scores and threshold are unaffected. Every returned node
 	// is guaranteed to match the requested subtype.
 	return filterScoredNodesBySubtype(expanded, subtypeFilter), nil
+}
+
+// searchReranked is the enabled-path recall pipeline (agentic-2ixw): it
+// over-retrieves max(limit, rerankOverRetrieve) candidates, reranks the
+// over-retrieved set, then cuts to limit and applies the subtype filter. The
+// composite score is preserved on each node — rerank governs ordering only.
+// On any reranker failure applyRerank degrades to the composite order, so the
+// AC4-NR non-regression floor holds.
+func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32, limit int, threshold float64, subtypeFilter *string) ([]store.ScoredNode, error) {
+	over := limit
+	if rerankOverRetrieve > over {
+		over = rerankOverRetrieve
+	}
+
+	results, err := b.store.VectorSearch(vec, over, threshold)
+	if err != nil {
+		return nil, err
+	}
+	expanded, err := b.store.ExpandGraph(results, over)
+	if err != nil {
+		return nil, err
+	}
+
+	reranked := applyRerank(ctx, newReranker(b.store), query, expanded, limit)
+	return filterScoredNodesBySubtype(reranked, subtypeFilter), nil
 }
 
 // SearchWithGlobal searches both the project store (weight 1.0) and the global
@@ -321,24 +353,44 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		return nil, fmt.Errorf("embedding query: %w", err)
 	}
 
+	// Over-retrieve width per store. Disabled path keeps today's limit*2 merge
+	// pool byte-identical (AC2b). Enabled path widens to max(limit*2,
+	// rerankOverRetrieve) so the rerank window is never narrower than the
+	// existing global merge pool (M1, Tech Lead review).
+	rerankOn := resolveRerankEnabled(b.store)
+	perStore := limit * 2
+	if rerankOn && rerankOverRetrieve > perStore {
+		perStore = rerankOverRetrieve
+	}
+
 	// Search project store
-	projectResults, err := b.store.VectorSearch(vec, limit*2, threshold)
+	projectResults, err := b.store.VectorSearch(vec, perStore, threshold)
 	if err != nil {
 		return nil, fmt.Errorf("project search: %w", err)
 	}
-	projectResults, err = b.store.ExpandGraph(projectResults, limit*2)
+	projectResults, err = b.store.ExpandGraph(projectResults, perStore)
 	if err != nil {
 		return nil, fmt.Errorf("project graph expansion: %w", err)
 	}
 
 	// Search global store
-	globalResults, err := global.store.VectorSearch(vec, limit*2, threshold)
+	globalResults, err := global.store.VectorSearch(vec, perStore, threshold)
 	if err != nil {
 		return nil, fmt.Errorf("global search: %w", err)
 	}
-	globalResults, err = global.store.ExpandGraph(globalResults, limit*2)
+	globalResults, err = global.store.ExpandGraph(globalResults, perStore)
 	if err != nil {
 		return nil, fmt.Errorf("global graph expansion: %w", err)
+	}
+
+	if rerankOn {
+		// Rerank the MERGED pool once, then cut to limit (M1: do not rerank the
+		// project and global pools separately). The 0.7 global weighting and
+		// mergeSearchResults semantics are untouched — merge keeps the full
+		// pool by passing a wide ceiling, rerank reorders, then we cut to limit.
+		merged := mergeSearchResults(projectResults, globalResults, perStore*2)
+		reranked := applyRerank(ctx, newReranker(b.store), query, merged, limit)
+		return filterScoredNodesBySubtype(reranked, subtypeFilter), nil
 	}
 
 	merged := mergeSearchResults(projectResults, globalResults, limit)

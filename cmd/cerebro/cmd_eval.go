@@ -58,8 +58,9 @@ Use -p / --project to point at the brain under evaluation.`,
 		"docs/evals/corpus.md",
 		"Path to corpus provenance manifest")
 	evalCmd.Flags().StringVar(&evalOutFlag, "out",
-		"docs/evals/baseline.json",
-		"Path to write the baseline JSON artifact")
+		"docs/evals/baseline.local.json",
+		"Path to write the baseline JSON artifact (defaults to a gitignored scratch file; "+
+			"pass --out docs/evals/baseline.json explicitly to update the committed reference baseline)")
 	evalCmd.Flags().IntVarP(&evalLimitFlag, "limit", "l", 20,
 		"Top-K ceiling for Brain.Search (covers recall@5, @10, @20)")
 	evalCmd.Flags().Float64VarP(&evalThresholdFlag, "threshold", "T", 0.3,
@@ -292,6 +293,19 @@ func groundTruthPreflight(s *store.Store, gtByQuery map[string]map[string]struct
 	return missing
 }
 
+// countResolvableGroundTruth returns the total number of (query, node-id)
+// ground-truth entries that remain after the preflight removed non-resolvable
+// IDs. When this is zero, the target brain contains none of the ground-truth
+// nodes (e.g. -p points at the wrong brain), so a scored baseline is impossible
+// and writing one would produce a misleading all-zero artifact (agentic-7r28).
+func countResolvableGroundTruth(gtByQuery map[string]map[string]struct{}) int {
+	n := 0
+	for _, ids := range gtByQuery {
+		n += len(ids)
+	}
+	return n
+}
+
 // ── Baseline builder (AC4) ─────────────────────────────────────────────────
 
 // buildBaseline constructs the baseline JSON artifact. The scorer weights are
@@ -382,6 +396,16 @@ func runEval(cmd *cobra.Command, _ []string) error {
 		gtByQuery[qid] = ids
 	}
 
+	// agentic-7r28: refuse to produce an all-zero baseline. If no ground-truth
+	// IDs resolve as active nodes, scoring is impossible — almost always because
+	// -p points at the wrong brain. Erroring here prevents silently overwriting
+	// a real committed baseline with zeros.
+	if countResolvableGroundTruth(gtByQuery) == 0 {
+		return fmt.Errorf(
+			"eval aborted: none of the ground-truth node IDs resolve as active nodes in the target brain — is -p pointing at the right brain? (refusing to write an all-zero baseline to %q)",
+			evalOutFlag)
+	}
+
 	// --- Brain stats for baseline (N1: never hardcode node count) ---
 	stats, err := b.Stats()
 	if err != nil {
@@ -423,6 +447,14 @@ func runEval(cmd *cobra.Command, _ []string) error {
 			Hits:    hits,
 			GT:      gtSet,
 		})
+	}
+
+	// agentic-7r28: defence-in-depth — never write a zero-query baseline (e.g.
+	// an empty queries file, or every query lacking resolvable ground truth).
+	if len(results) == 0 {
+		return fmt.Errorf(
+			"eval aborted: 0 queries scored (no queries matched resolvable ground truth) — refusing to write an all-zero baseline to %q",
+			evalOutFlag)
 	}
 
 	// --- Compute aggregate metrics ---

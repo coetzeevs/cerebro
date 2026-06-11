@@ -179,8 +179,48 @@ Available settings:
 | `search_limit` | 10 | Max results for the `search` command |
 | `search_threshold` | 0.7 | Min similarity for the `search` command |
 | `recall_threshold` | 0.3 | Min similarity for `recall` query mode |
+| `rerank_enabled` | `false` | Enable local cross-encoder reranking of recall candidates (see below) |
+| `rerank_command` | _(empty)_ | Local reranker subprocess; empty falls back to `CEREBRO_RERANK_COMMAND` env or disables |
 
 Config values travel with the brain — they are preserved across `export`/`import`.
+
+### Optional cross-encoder reranking (agentic-2ixw)
+
+Reranking is **off by default**; when off, recall is byte-identical to the
+pre-rerank pipeline. When enabled, `recall`/`search` over-retrieve a wider
+candidate set by composite score, rerank it with a local cross-encoder, and cut
+to the limit (`≤10` typical) — so the most relevant memories rank highest. The
+composite scorer weights are unchanged; reranking only reorders the final cut.
+
+cerebro bundles **no model.** You supply a local reranker subprocess that reads a
+JSON request on stdin and writes a JSON response on stdout:
+
+```
+stdin:  {"query": "<text>", "documents": ["doc0", "doc1", ...]}
+stdout: {"scores": [s0, s1, ...]}      # one finite score per document, index-aligned
+```
+
+Enable it:
+
+```bash
+cerebro config set rerank_enabled true -p <brain>
+# either set the command in brain config (wins over the env var)...
+cerebro config set rerank_command "/path/to/python /path/to/rerank.py" -p <brain>
+# ...or via the environment:
+export CEREBRO_RERANK_COMMAND="/path/to/python /path/to/rerank.py"
+```
+
+A reference reranker (MiniLM cross-encoder, ~90MB, downloaded by the script not
+by cerebro) ships under [`docs/evals/reranker/`](docs/evals/reranker/). The
+recommended model is `cross-encoder/ms-marco-MiniLM-L6-v2` for footprint;
+`bge-reranker-v2-m3` is a higher-quality multilingual option if you accept its
+~568MB size.
+
+**Graceful degradation.** If reranking is enabled but the command is
+unset/missing/crashes or returns malformed, short, or non-finite output, cerebro
+logs a one-line stderr warning and falls back to the pre-rerank composite order
+— recall is never worse than disabled. The command is run argv-array style
+(never a shell) with a bounded timeout.
 
 ## Go library usage
 

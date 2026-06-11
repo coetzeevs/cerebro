@@ -6,3 +6,9 @@
 *.sqlite-wal
 *.sqlite-shm
 *.sqlite-journal
+
+# agentic-7r28: the default `cerebro eval --out` target is a local scratch
+# baseline so a bare `cerebro eval` never clobbers the committed reference
+# (docs/evals/baseline.json). Updating the committed baseline is deliberate:
+# `cerebro eval -p <brain> --out docs/evals/baseline.json`.
+baseline.local.json

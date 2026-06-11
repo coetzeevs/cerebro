@@ -31,7 +31,7 @@ func captureEval(t *testing.T, args ...string) (stdout, stderr []byte, err error
 	evalQueriesFlag = "docs/evals/queries.jsonl"
 	evalGroundTruthFlag = "docs/evals/ground-truth.jsonl"
 	evalCorpusFlag = "docs/evals/corpus.md"
-	evalOutFlag = "docs/evals/baseline.json"
+	evalOutFlag = "docs/evals/baseline.local.json"
 	evalLimitFlag = 20
 	evalThresholdFlag = 0.3
 
@@ -342,6 +342,54 @@ func TestGroundTruthPreflight_MissingID(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("expected fakeID in missing list, got %v", missing)
+	}
+}
+
+// ---- agentic-7r28: guard against writing an all-zero baseline ----
+
+// TestCountResolvableGroundTruth verifies the count of ground-truth entries
+// remaining after the preflight removes non-resolvable IDs. Zero means the
+// target brain contains none of the ground-truth nodes — scoring is impossible.
+func TestCountResolvableGroundTruth(t *testing.T) {
+	allEmpty := map[string]map[string]struct{}{"q1": {}, "q2": {}}
+	if n := countResolvableGroundTruth(allEmpty); n != 0 {
+		t.Errorf("all-empty ground truth: want 0, got %d", n)
+	}
+
+	some := map[string]map[string]struct{}{
+		"q1": {"a": {}, "b": {}},
+		"q2": {"b": {}},
+	}
+	if n := countResolvableGroundTruth(some); n != 3 {
+		t.Errorf("want 3 resolvable entries, got %d", n)
+	}
+}
+
+// TestGroundTruthPreflight_AllMissing_ZeroResolvable simulates the "wrong brain"
+// scenario (agentic-7r28): none of the ground-truth IDs resolve as active nodes.
+// After the preflight strips them, zero resolvable entries remain — the
+// condition the eval guard uses to refuse writing an all-zero baseline.
+func TestGroundTruthPreflight_AllMissing_ZeroResolvable(t *testing.T) {
+	b := testBrain(t) // brain has no nodes matching the ground truth
+
+	gtByQuery := map[string]map[string]struct{}{
+		"q1": {"deadbeef-0000-0000-0000-000000000001": {}},
+		"q2": {"deadbeef-0000-0000-0000-000000000002": {}},
+	}
+
+	missing := groundTruthPreflight(b.Store(), gtByQuery)
+	if len(missing) != 2 {
+		t.Fatalf("expected 2 missing IDs, got %d (%v)", len(missing), missing)
+	}
+	// Mirror runEval's removal of missing IDs.
+	for qid, ids := range gtByQuery {
+		for _, id := range missing {
+			delete(ids, id)
+		}
+		gtByQuery[qid] = ids
+	}
+	if n := countResolvableGroundTruth(gtByQuery); n != 0 {
+		t.Errorf("after stripping all-missing GT, want 0 resolvable, got %d", n)
 	}
 }
 

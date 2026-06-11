@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed [agentic-7r28]
+
+- `cerebro eval` no longer silently writes an all-zero baseline when the target brain contains none of the ground-truth nodes (the "wrong `-p`" case). It now aborts with a clear non-zero error (`eval aborted: none of the ground-truth node IDs resolve as active nodes in the target brain …`) before writing anything. A second defence-in-depth guard refuses any zero-query baseline. New pure helper `countResolvableGroundTruth` covers the condition (unit + preflight-integration tests). [agentic-7r28]
+- `cerebro eval --out` now defaults to a gitignored scratch path (`docs/evals/baseline.local.json`) instead of the committed reference (`docs/evals/baseline.json`), so a bare `cerebro eval` can never clobber the committed baseline; updating the committed reference is now a deliberate `--out docs/evals/baseline.json`. [agentic-7r28]
+
 ### Added [agentic-x183]
 
 - `cerebro eval` subcommand: recall-quality evaluation harness for the composite scorer. Measures recall@5, recall@10, recall@20, and MRR against a hand-authored ground-truth corpus. Flags: `--queries`, `--ground-truth`, `--corpus`, `--out`, `--limit`, `--threshold`. Drives the unmodified `Brain.Search(limit=20, subtypeFilter=nil)` pipeline; reads brain stats at runtime (no hardcoded node count). Pure metric helpers `computeRecallAtK` and `computeMRR` are unit-tested with synthetic inputs — no Ollama required for the test suite. Ground-truth AC2b preflight validates node IDs against the live `nodes` table; pruned IDs are reported to stderr and skipped from recall denominators. Scorer weights (`relevance=0.35, importance=0.25, recency=0.25, structural=0.15`) recorded in `baseline.json` (AC4 contract). [agentic-x183]

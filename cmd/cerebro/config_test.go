@@ -291,8 +291,9 @@ func TestConfigSurvivesExportImport(t *testing.T) {
 // --- agentic-2ixw: rerank config keys ---
 
 // AC2a: rerank_enabled is a known key and defaults to "false".
+// rerank_fusion (agentic-2ixw recall@10 investigation) defaults to "rrf".
 func TestConfigRegistry_RerankKeys(t *testing.T) {
-	for _, key := range []string{"rerank_enabled", "rerank_command"} {
+	for _, key := range []string{"rerank_enabled", "rerank_command", "rerank_fusion"} {
 		if _, ok := configRegistry[key]; !ok {
 			t.Errorf("expected key %q in configRegistry", key)
 		}
@@ -303,13 +304,16 @@ func TestConfigRegistry_RerankKeys(t *testing.T) {
 	if got := configRegistry["rerank_command"].Default; got != "" {
 		t.Errorf("rerank_command default = %q, want empty", got)
 	}
+	if got := configRegistry["rerank_fusion"].Default; got != "rrf" {
+		t.Errorf("rerank_fusion default = %q, want \"rrf\"", got)
+	}
 }
 
-// M3: both new keys must appear in the hardcoded configRegistryKeys() slice,
+// M3: all rerank keys must appear in the hardcoded configRegistryKeys() slice,
 // otherwise `cerebro config list` silently omits them (DoD item 5).
 func TestConfigRegistryKeys_IncludesRerankKeys(t *testing.T) {
 	keys := configRegistryKeys()
-	want := map[string]bool{"rerank_enabled": false, "rerank_command": false}
+	want := map[string]bool{"rerank_enabled": false, "rerank_command": false, "rerank_fusion": false}
 	for _, k := range keys {
 		if _, ok := want[k]; ok {
 			want[k] = true
@@ -318,6 +322,22 @@ func TestConfigRegistryKeys_IncludesRerankKeys(t *testing.T) {
 	for k, present := range want {
 		if !present {
 			t.Errorf("configRegistryKeys() is missing %q (M3 / config list)", k)
+		}
+	}
+}
+
+// rerank_fusion validator accepts exactly "rrf" or "reorder"; anything else is
+// rejected so the combine-mode gate is unambiguous.
+func TestConfigValidation_RerankFusion(t *testing.T) {
+	p := configRegistry["rerank_fusion"]
+	for _, v := range []string{"rrf", "reorder"} {
+		if err := p.Validate(v); err != nil {
+			t.Errorf("Validate(%q) unexpected error: %v", v, err)
+		}
+	}
+	for _, v := range []string{"RRF", "Reorder", "blend", "", "weighted"} {
+		if err := p.Validate(v); err == nil {
+			t.Errorf("Validate(%q) expected error, got nil", v)
 		}
 	}
 }

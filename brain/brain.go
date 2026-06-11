@@ -314,11 +314,13 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 }
 
 // searchReranked is the enabled-path recall pipeline (agentic-2ixw): it
-// over-retrieves max(limit, rerankOverRetrieve) candidates, reranks the
-// over-retrieved set, then cuts to limit and applies the subtype filter. The
-// composite score is preserved on each node — rerank governs ordering only.
-// On any reranker failure applyRerank degrades to the composite order, so the
-// AC4-NR non-regression floor holds.
+// over-retrieves max(limit, rerankOverRetrieve) candidates, combines the
+// composite ranking with the reranker ranking per the configured rerank_fusion
+// mode (RRF by default, legacy pure-reorder when set to "reorder"), then cuts
+// to limit and applies the subtype filter. The composite score is preserved on
+// each node — fusion governs ordering only. On any reranker failure
+// applyRerankWithFusion degrades to the composite order, so the AC4-NR
+// non-regression floor holds.
 func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32, limit int, threshold float64, subtypeFilter *string) ([]store.ScoredNode, error) {
 	over := limit
 	if rerankOverRetrieve > over {
@@ -334,7 +336,7 @@ func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32,
 		return nil, err
 	}
 
-	reranked := applyRerank(ctx, newReranker(b.store), query, expanded, limit)
+	reranked := applyRerankWithFusion(ctx, newReranker(b.store), query, expanded, limit, resolveRerankFusion(b.store))
 	return filterScoredNodesBySubtype(reranked, subtypeFilter), nil
 }
 
@@ -389,7 +391,7 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		// mergeSearchResults semantics are untouched — merge keeps the full
 		// pool by passing a wide ceiling, rerank reorders, then we cut to limit.
 		merged := mergeSearchResults(projectResults, globalResults, perStore*2)
-		reranked := applyRerank(ctx, newReranker(b.store), query, merged, limit)
+		reranked := applyRerankWithFusion(ctx, newReranker(b.store), query, merged, limit, resolveRerankFusion(b.store))
 		return filterScoredNodesBySubtype(reranked, subtypeFilter), nil
 	}
 

@@ -29,6 +29,29 @@ const (
 // CLI configRegistry remains the validation/documentation/`config list` surface.
 const rerankConfigPrefix = "config."
 
+// Combine-mode names for the rerank_fusion config key (agentic-2ixw recall@10
+// investigation). The default is RRF — pure-reorder is retained for parity/A-B
+// comparison and for operators who want the cross-encoder ranking verbatim.
+const (
+	// fusionModeRRF fuses the composite ranking and the reranker ranking via
+	// Reciprocal Rank Fusion. This is the default: it preserves a composite-top
+	// item that the cross-encoder demotes, recovering the recall@10 dip the
+	// pure-reorder combine exhibited (it discards the composite order entirely).
+	fusionModeRRF = "rrf"
+	// fusionModeReorder is the legacy pure-reorder combine: sort by the reranker
+	// score alone, discarding the composite order. Retained behind config so the
+	// before/after tradeoff stays measurable.
+	fusionModeReorder = "reorder"
+)
+
+// defaultRRFK is the Reciprocal Rank Fusion rank constant. 60 is the standard
+// value introduced by Cormack, Clarke & Buettcher (SIGIR 2009) and the default
+// `rank_constant` in production engines (e.g. Elasticsearch's rrf retriever,
+// docs: reference/elasticsearch/rest-apis/reciprocal-rank-fusion.md — default
+// 60, must be ≥1). A higher k flattens rank influence (lower-ranked docs matter
+// more); 60 is the parameter-free, no-tuning default.
+const defaultRRFK = 60
+
 // resolveRerankEnabled reads config.rerank_enabled from the store. The
 // gate is strict: only the literal "true" enables reranking; an unset row,
 // "false", or any other value resolves to disabled (M4: ""→false default).
@@ -53,6 +76,20 @@ func resolveRerankCommand(s *store.Store) string {
 		return val
 	}
 	return os.Getenv("CEREBRO_RERANK_COMMAND")
+}
+
+// resolveRerankFusion reads config.rerank_fusion from the store and returns the
+// combine mode for the enabled path. The default — and the fallback for any
+// unrecognised value — is RRF (fusionModeRRF); only the literal "reorder"
+// selects the legacy pure-reorder combine. Env-free by design (mirrors
+// resolveRerankEnabled): the combine mode is a brain-config decision, not an
+// env toggle.
+func resolveRerankFusion(s *store.Store) string {
+	val, _ := s.GetMeta(rerankConfigPrefix + "rerank_fusion")
+	if val == fusionModeReorder {
+		return fusionModeReorder
+	}
+	return fusionModeRRF
 }
 
 // newReranker constructs the reranker for the enabled path, or returns nil when
@@ -99,12 +136,101 @@ func reorderByRerankScore(nodes []store.ScoredNode, scores []float64) []store.Sc
 	return out
 }
 
-// applyRerank runs the rerank step over an over-retrieved candidate set and
+// fuseRRF combines the composite ranking (the input `nodes` order, after
+// VectorSearch+ExpandGraph) with the reranker ranking (derived from `scores`)
+// via Reciprocal Rank Fusion, and returns nodes sorted by descending fused
+// score. Composite ScoredNode.Score is preserved on each node — fusion governs
+// ordering only, never the composite score.
+//
+// For each node the fused score is the sum of two reciprocal-rank terms:
+//
+//	fused = 1/(k + rank_composite) + 1/(k + rank_reranker)
+//
+// with ranks starting at 1 (Cormack et al., SIGIR 2009; Elasticsearch rrf
+// retriever default rank_constant=60). Because both rankings cover the SAME
+// candidate set, every node contributes from both terms — so a composite-top
+// item the reranker buries keeps the strong 1/(k+1) composite term and survives
+// the cut, which is exactly the recall@10 recovery pure-reorder lacks.
+//
+// A length mismatch is a no-op (returns nodes unchanged) so a malformed score
+// set can never corrupt the ranking (caller degrades). A non-positive k is
+// clamped to defaultRRFK to keep the denominator ≥1 (the RRF definition).
+func fuseRRF(nodes []store.ScoredNode, scores []float64, k int) []store.ScoredNode {
+	if len(scores) != len(nodes) {
+		return nodes
+	}
+	if k < 1 {
+		k = defaultRRFK
+	}
+
+	// Composite rank = input index (already composite-ordered), 1-based.
+	// Reranker rank = position in descending-score order, 1-based.
+	rerankRank := make([]int, len(nodes))
+	order := make([]int, len(nodes))
+	for i := range order {
+		order[i] = i
+	}
+	// Stable sort indices by descending reranker score; ties keep composite order
+	// (lower original index first) so the fusion is deterministic.
+	sort.SliceStable(order, func(i, j int) bool {
+		return scores[order[i]] > scores[order[j]]
+	})
+	for pos, idx := range order {
+		rerankRank[idx] = pos + 1
+	}
+
+	type fused struct {
+		node  store.ScoredNode
+		score float64
+		comp  int // composite rank, for deterministic tie-breaking
+	}
+	pairs := make([]fused, len(nodes))
+	for i := range nodes {
+		compRank := i + 1
+		rrf := 1.0/float64(k+compRank) + 1.0/float64(k+rerankRank[i])
+		pairs[i] = fused{node: nodes[i], score: rrf, comp: compRank}
+	}
+	// Sort by descending fused score; ties broken by ascending composite rank so
+	// the composite-order winner stays ahead (deterministic).
+	sort.SliceStable(pairs, func(i, j int) bool {
+		if pairs[i].score != pairs[j].score {
+			return pairs[i].score > pairs[j].score
+		}
+		return pairs[i].comp < pairs[j].comp
+	})
+
+	out := make([]store.ScoredNode, len(pairs))
+	for i := range pairs {
+		out[i] = pairs[i].node
+	}
+	return out
+}
+
+// applyRerank is the RRF-default convenience seam retained for callers/tests
+// that do not select a combine mode explicitly. It delegates to
+// applyRerankWithFusion with the RRF default (the recall@10-recovering combine).
+func applyRerank(ctx context.Context, r rerank.Reranker, query string, nodes []store.ScoredNode, limit int) []store.ScoredNode {
+	return applyRerankWithFusion(ctx, r, query, nodes, limit, fusionModeRRF)
+}
+
+// combineRerankScores combines the composite-ordered nodes with the reranker
+// scores per the selected fusion mode. fusionModeRRF (default) fuses both
+// rankings via Reciprocal Rank Fusion; fusionModeReorder is the legacy
+// pure-reorder (sort by reranker score, discard composite order).
+func combineRerankScores(nodes []store.ScoredNode, scores []float64, mode string) []store.ScoredNode {
+	if mode == fusionModeReorder {
+		return reorderByRerankScore(nodes, scores)
+	}
+	return fuseRRF(nodes, scores, defaultRRFK)
+}
+
+// applyRerankWithFusion runs the rerank step over an over-retrieved candidate
+// set, combines the reranker scores with the composite order per `mode`, and
 // cuts to limit. On ANY reranker error (command unset/missing/crash, malformed
 // or short JSON, non-finite scores, timeout) it logs a one-line stderr warning
-// and degrades to the pre-rerank order — recall is never worse than disabled,
-// so the AC4-NR floor holds. The cut is applied in both branches.
-func applyRerank(ctx context.Context, r rerank.Reranker, query string, nodes []store.ScoredNode, limit int) []store.ScoredNode {
+// and degrades to the pre-rerank composite order — recall is never worse than
+// disabled, so the AC4-NR floor holds. The cut is applied in both branches.
+func applyRerankWithFusion(ctx context.Context, r rerank.Reranker, query string, nodes []store.ScoredNode, limit int, mode string) []store.ScoredNode {
 	ordered := nodes
 
 	// A nil reranker means rerank is enabled but no command is configured
@@ -121,7 +247,7 @@ func applyRerank(ctx context.Context, r rerank.Reranker, query string, nodes []s
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "cerebro: reranker %q failed (%v); using composite order\n", r.Name(), err)
 		} else {
-			ordered = reorderByRerankScore(nodes, scores)
+			ordered = combineRerankScores(nodes, scores, mode)
 		}
 	}
 

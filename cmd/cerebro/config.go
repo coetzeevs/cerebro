@@ -60,6 +60,12 @@ var configRegistry = map[string]configParam{
 		Default:     "",
 		Validate:    validateAny,
 	},
+	"rerank_fusion": {
+		Key:         "rerank_fusion",
+		Description: "Combine mode when rerank is enabled: \"rrf\" (Reciprocal Rank Fusion, default — fuses composite+reranker ranks) or \"reorder\" (legacy pure-reorder by reranker score)",
+		Default:     "rrf",
+		Validate:    validateRerankFusion,
+	},
 }
 
 // configMetaPrefix is prepended to config keys when storing in schema_meta.
@@ -103,6 +109,17 @@ func validateBool(s string) error {
 // (e.g. a reranker command line). It never rejects (M2, agentic-2ixw). The
 // stored string is consumed as an argv-array (never a shell) at the use site.
 func validateAny(string) error { return nil }
+
+// validateRerankFusion accepts exactly "rrf" or "reorder" (lowercase) so the
+// combine-mode gate is unambiguous. The brain-side resolver
+// (brain.resolveRerankFusion) treats any non-"reorder" value as the RRF default;
+// this validator additionally rejects typos at config-set time (agentic-2ixw).
+func validateRerankFusion(s string) error {
+	if s == "rrf" || s == "reorder" {
+		return nil
+	}
+	return fmt.Errorf("must be \"rrf\" or \"reorder\", got %q", s)
+}
 
 // --- Resolve helpers ---
 
@@ -389,6 +406,7 @@ func configRegistryKeys() []string {
 		"recall_threshold",
 		"rerank_enabled",
 		"rerank_command",
+		"rerank_fusion",
 	}
 }
 

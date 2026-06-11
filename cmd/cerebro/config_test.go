@@ -287,3 +287,103 @@ func TestConfigSurvivesExportImport(t *testing.T) {
 		t.Errorf("resolveConfigInt after import = %d, want 42", got)
 	}
 }
+
+// --- agentic-2ixw: rerank config keys ---
+
+// AC2a: rerank_enabled is a known key and defaults to "false".
+// rerank_fusion (agentic-2ixw recall@10 investigation) defaults to "rrf".
+func TestConfigRegistry_RerankKeys(t *testing.T) {
+	for _, key := range []string{"rerank_enabled", "rerank_command", "rerank_fusion"} {
+		if _, ok := configRegistry[key]; !ok {
+			t.Errorf("expected key %q in configRegistry", key)
+		}
+	}
+	if got := configRegistry["rerank_enabled"].Default; got != "false" {
+		t.Errorf("rerank_enabled default = %q, want \"false\" (AC2a)", got)
+	}
+	if got := configRegistry["rerank_command"].Default; got != "" {
+		t.Errorf("rerank_command default = %q, want empty", got)
+	}
+	if got := configRegistry["rerank_fusion"].Default; got != "rrf" {
+		t.Errorf("rerank_fusion default = %q, want \"rrf\"", got)
+	}
+}
+
+// M3: all rerank keys must appear in the hardcoded configRegistryKeys() slice,
+// otherwise `cerebro config list` silently omits them (DoD item 5).
+func TestConfigRegistryKeys_IncludesRerankKeys(t *testing.T) {
+	keys := configRegistryKeys()
+	want := map[string]bool{"rerank_enabled": false, "rerank_command": false, "rerank_fusion": false}
+	for _, k := range keys {
+		if _, ok := want[k]; ok {
+			want[k] = true
+		}
+	}
+	for k, present := range want {
+		if !present {
+			t.Errorf("configRegistryKeys() is missing %q (M3 / config list)", k)
+		}
+	}
+}
+
+// rerank_fusion validator accepts exactly "rrf" or "reorder"; anything else is
+// rejected so the combine-mode gate is unambiguous.
+func TestConfigValidation_RerankFusion(t *testing.T) {
+	p := configRegistry["rerank_fusion"]
+	for _, v := range []string{"rrf", "reorder"} {
+		if err := p.Validate(v); err != nil {
+			t.Errorf("Validate(%q) unexpected error: %v", v, err)
+		}
+	}
+	for _, v := range []string{"RRF", "Reorder", "blend", "", "weighted"} {
+		if err := p.Validate(v); err == nil {
+			t.Errorf("Validate(%q) expected error, got nil", v)
+		}
+	}
+}
+
+// M2: validateBool accepts true/false and rejects anything else.
+func TestValidateBool(t *testing.T) {
+	for _, v := range []string{"true", "false"} {
+		if err := validateBool(v); err != nil {
+			t.Errorf("validateBool(%q) unexpected error: %v", v, err)
+		}
+	}
+	for _, v := range []string{"True", "FALSE", "1", "0", "yes", "no", "", "abc"} {
+		if err := validateBool(v); err == nil {
+			t.Errorf("validateBool(%q) expected error, got nil", v)
+		}
+	}
+}
+
+// M2: validateAny is permissive (free-form command string) — never errors.
+func TestValidateAny(t *testing.T) {
+	for _, v := range []string{"", "my-reranker --flag", "python rerank.py", "lit$HOME"} {
+		if err := validateAny(v); err != nil {
+			t.Errorf("validateAny(%q) unexpected error: %v", v, err)
+		}
+	}
+}
+
+// AC2a: the registry validator for rerank_enabled rejects non-bool values.
+func TestConfigValidation_RerankEnabled(t *testing.T) {
+	p := configRegistry["rerank_enabled"]
+	if err := p.Validate("true"); err != nil {
+		t.Errorf("Validate(true) unexpected error: %v", err)
+	}
+	if err := p.Validate("maybe"); err == nil {
+		t.Error("Validate(maybe) expected error, got nil")
+	}
+}
+
+// AC2a: a fresh brain (no override) resolves rerank_enabled to disabled.
+func TestRerankDisabledByDefault(t *testing.T) {
+	b := testBrainForConfig(t)
+	stored, err := b.Store().GetMeta("config.rerank_enabled")
+	if err != nil {
+		t.Fatalf("GetMeta: %v", err)
+	}
+	if stored != "" {
+		t.Errorf("fresh brain has config.rerank_enabled = %q, want empty (disabled default)", stored)
+	}
+}

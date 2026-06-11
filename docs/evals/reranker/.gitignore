@@ -1,0 +1,5 @@
+# The reference reranker's Python venv and any downloaded model assets are
+# operator-local; cerebro bundles no model and commits no virtualenv.
+.venv/
+__pycache__/
+*.pyc

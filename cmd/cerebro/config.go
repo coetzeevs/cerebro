@@ -48,6 +48,24 @@ var configRegistry = map[string]configParam{
 		Default:     "0.3",
 		Validate:    validateUnitFloat,
 	},
+	"rerank_enabled": {
+		Key:         "rerank_enabled",
+		Description: "Enable local cross-encoder reranking of recall candidates (agentic-2ixw)",
+		Default:     "false",
+		Validate:    validateBool,
+	},
+	"rerank_command": {
+		Key:         "rerank_command",
+		Description: "Local reranker subprocess (JSON stdin/stdout); empty = use CEREBRO_RERANK_COMMAND env or disable",
+		Default:     "",
+		Validate:    validateAny,
+	},
+	"rerank_fusion": {
+		Key:         "rerank_fusion",
+		Description: "Combine mode when rerank is enabled: \"rrf\" (Reciprocal Rank Fusion, default — fuses composite+reranker ranks) or \"reorder\" (legacy pure-reorder by reranker score)",
+		Default:     "rrf",
+		Validate:    validateRerankFusion,
+	},
 }
 
 // configMetaPrefix is prepended to config keys when storing in schema_meta.
@@ -75,6 +93,32 @@ func validateUnitFloat(s string) error {
 		return fmt.Errorf("must be between 0 and 1, got %s", s)
 	}
 	return nil
+}
+
+// validateBool accepts exactly "true" or "false" (lowercase). Anything else,
+// including "1"/"0"/"True"/"yes", is rejected so the boolean gate is
+// unambiguous (M2, agentic-2ixw).
+func validateBool(s string) error {
+	if s == "true" || s == "false" {
+		return nil
+	}
+	return fmt.Errorf("must be \"true\" or \"false\", got %q", s)
+}
+
+// validateAny is a permissive validator for free-form string config values
+// (e.g. a reranker command line). It never rejects (M2, agentic-2ixw). The
+// stored string is consumed as an argv-array (never a shell) at the use site.
+func validateAny(string) error { return nil }
+
+// validateRerankFusion accepts exactly "rrf" or "reorder" (lowercase) so the
+// combine-mode gate is unambiguous. The brain-side resolver
+// (brain.resolveRerankFusion) treats any non-"reorder" value as the RRF default;
+// this validator additionally rejects typos at config-set time (agentic-2ixw).
+func validateRerankFusion(s string) error {
+	if s == "rrf" || s == "reorder" {
+		return nil
+	}
+	return fmt.Errorf("must be \"rrf\" or \"reorder\", got %q", s)
 }
 
 // --- Resolve helpers ---
@@ -351,12 +395,18 @@ func resolveConfigString(s *store.Store, key string) string {
 // configRegistryKeys returns registry keys in sorted order for deterministic output.
 func configRegistryKeys() []string {
 	// Explicit order for readability.
+	// NOTE: this slice is hand-maintained, NOT derived from configRegistry —
+	// any new registry key MUST also be appended here or `cerebro config list`
+	// silently omits it (M3, agentic-2ixw).
 	return []string{
 		"prime_limit",
 		"gc_threshold",
 		"search_limit",
 		"search_threshold",
 		"recall_threshold",
+		"rerank_enabled",
+		"rerank_command",
+		"rerank_fusion",
 	}
 }
 

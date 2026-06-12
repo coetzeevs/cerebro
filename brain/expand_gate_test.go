@@ -76,6 +76,13 @@ func TestShouldSkipExpansion(t *testing.T) {
 		{"T1_negative_threshold_disables", []float64{0.9}, 1, -1.0, 0.0, false},
 		{"T1_above_one_threshold_inert", []float64{1.0}, 1, 5.0, 0.0, false},
 		{"T2_negative_threshold_disables", []float64{0.70, 0.699}, 2, 0.0, -0.5, false},
+		// HONEST PIN (refines TL Minor 3's ">1 fails open" claim, which holds
+		// for T1 only): a bypass-written spread threshold > 1 DOES fire T2 on
+		// any full set (every spread is < 5.0) — an extreme-but-bounded
+		// plateau test, not a fail-open. Unreachable via the CLI
+		// (validateUnitFloat caps at 1) and T2 ships OFF; documented here so
+		// the behaviour is pinned, not discovered.
+		{"T2_above_one_threshold_bypass_written_fires_on_full_set", []float64{0.70, 0.50}, 2, 0.0, 5.0, true},
 
 		// NaN thresholds (bypass-written; CLI rejects post-S-1): NaN compares
 		// false to everything, so both `> 0` guards fail and the gate DISABLES.

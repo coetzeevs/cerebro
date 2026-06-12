@@ -6,23 +6,42 @@ import (
 	"time"
 )
 
-// buildMatchQuery turns an untrusted user query into a single literal FTS5
-// phrase so NO FTS5 operator from user text reaches the FTS5 parser as syntax
-// (S-PI-N1, the load-bearing injection-neutralisation contract).
+// buildMatchQuery turns an untrusted user query into an injection-safe FTS5
+// MATCH expression by tokenising on whitespace, wrapping EACH token in its own
+// double-quoted FTS5 phrase (doubling any internal double-quote — FTS5's
+// phrase-escape), and joining the phrases with ` OR ` (S-PI-N1, the load-bearing
+// injection-neutralisation contract).
 //
-// Mechanism (live-proven, mattn/go-sqlite3 v1.14.34): wrap the whole string in
-// double-quotes and double any internal double-quote — FTS5's phrase-quoting
-// escape. Inside a phrase, AND/OR/NOT/NEAR/*/":/^/( ) are matched as literal
-// text, not operators. The exact-identifier case (e.g. "HS-049") still matches
-// under the default unicode61 tokenizer because the phrase tokenises to the same
-// terms as the indexed content.
+// Why per-token-OR and not one whole-query phrase (the rework — agentic-2lak):
+// wrapping the WHOLE query in one phrase (`"OO-015 determinism wire"`) requires
+// every term to be ADJACENT in the indexed text, so any multi-word query matched
+// nothing (live-proven: that phrase → 0 rows; the entire eval corpus is
+// multi-word, so BM25 was inert on every query). Tokenising and OR-joining
+// (`"OO-015" OR "determinism" OR "wire"`) lets each term match independently, so
+// the rare identifier token matches inside a multi-word query and bm25()'s
+// term-rarity weighting floats those rare matches to the top of the keyword lane.
 //
-// The result is still bound as a SQL ? parameter by the caller — ?-binding stops
-// classic SQL injection, and the phrase-quoting stops the second-order FTS5
-// expression injection that ?-binding alone does NOT close.
+// Injection safety is preserved EXACTLY (live-proven, mattn/go-sqlite3
+// v1.14.34): every user token is an individual quoted phrase, so no FTS5
+// operator from user text (AND/OR/NOT/NEAR/*/:/^/( )) reaches the parser as
+// syntax — it is literal phrase content. The ` OR ` is OURS, not the user's. A
+// user word like `OR`/`AND`/`NEAR` becomes a quoted literal phrase (inert). The
+// result is still bound as a SQL ? parameter by the caller — ?-binding stops
+// classic SQL injection; the per-token phrase-quoting stops the second-order
+// FTS5 expression injection that ?-binding alone does NOT close.
+//
+// Empty / all-whitespace input yields "" (no tokens); KeywordSearch's
+// empty-query guard short-circuits before this is ever reached as a MATCH.
 func buildMatchQuery(query string) string {
-	escaped := strings.ReplaceAll(query, `"`, `""`)
-	return `"` + escaped + `"`
+	fields := strings.Fields(query)
+	if len(fields) == 0 {
+		return ""
+	}
+	quoted := make([]string, 0, len(fields))
+	for _, tok := range fields {
+		quoted = append(quoted, `"`+strings.ReplaceAll(tok, `"`, `""`)+`"`)
+	}
+	return strings.Join(quoted, " OR ")
 }
 
 // KeywordSearch runs an FTS5 BM25 query over nodes_fts and returns active nodes

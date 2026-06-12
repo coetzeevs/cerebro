@@ -66,6 +66,12 @@ var configRegistry = map[string]configParam{
 		Default:     "rrf",
 		Validate:    validateRerankFusion,
 	},
+	"bm25_enabled": {
+		Key:         "bm25_enabled",
+		Description: "Compose BM25/FTS5 keyword recall into the pipeline (agentic-2lak). Default true (always-on when the binary has the fts5 build tag). Set false ONLY as an eval/diagnostic seam to produce the same-session BM25-disabled floor — not an end-user feature toggle.",
+		Default:     "true",
+		Validate:    validateBool,
+	},
 }
 
 // configMetaPrefix is prepended to config keys when storing in schema_meta.
@@ -407,6 +413,7 @@ func configRegistryKeys() []string {
 		"rerank_enabled",
 		"rerank_command",
 		"rerank_fusion",
+		"bm25_enabled",
 	}
 }
 

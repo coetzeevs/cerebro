@@ -1,8 +1,11 @@
 package store
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+)
 
-const schemaVersion = "2"
+const schemaVersion = "3"
 
 // applySchema creates all tables and indexes if they don't exist.
 func (s *Store) applySchema() error {
@@ -80,6 +83,16 @@ func (s *Store) applySchema() error {
 		}
 	}
 
+	// nodes_fts FTS5 virtual table (agentic-2lak). This is a SEPARATE guarded
+	// call OUTSIDE the stmts[] loop above: a CREATE VIRTUAL TABLE … USING fts5
+	// fails with "no such module: fts5" on any binary built without the fts5
+	// build tag, and the stmts[] loop returns on the FIRST error — inlining the
+	// FTS create there would abort Init/Open and brick every no-fts5 binary.
+	// initFTSTable logs-and-continues on failure, so keyword recall degrades
+	// gracefully (the keyword lane contributes nothing) while the primary store
+	// remains fully functional. Mirrors InitVectorTable's separation for vec.
+	s.initFTSTable()
+
 	// Set schema version if not present
 	_, err := s.db.Exec(
 		`INSERT OR IGNORE INTO schema_meta (key, value) VALUES ('schema_version', ?)`,
@@ -90,6 +103,72 @@ func (s *Store) applySchema() error {
 	}
 
 	return nil
+}
+
+// ftsAvailable reports whether the nodes_fts FTS5 virtual table exists in this
+// database. It returns false when the binary was built without the fts5 build
+// tag (the CREATE failed and was logged-and-skipped) — the application-level
+// CRUD sync uses this to skip FTS writes gracefully (D2: no trigger/build-tag
+// coupling that would crash basic writes).
+func (s *Store) ftsAvailable() bool {
+	var name string
+	err := s.db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='nodes_fts'`,
+	).Scan(&name)
+	return err == nil && name == "nodes_fts"
+}
+
+// initFTSTable creates the nodes_fts FTS5 virtual table if it does not exist and
+// backfills it from the existing nodes table when freshly created. It is
+// deliberately separate from applySchema's stmts[] loop and best-effort: on a
+// binary built WITHOUT the fts5 tag the CREATE returns "no such module: fts5",
+// which is logged once to stderr and swallowed so the store opens normally
+// (graceful degrade — keyword recall is simply absent). Mirrors the
+// vec_nodes-absent tolerance in search.go/gc.go.
+//
+// nodes_fts is a STANDALONE FTS5 table (NOT external-content): nodes.id is a
+// TEXT UUID and external-content FTS5 requires an INTEGER content_rowid. The
+// node_id column is UNINDEXED (a join key, not searched); content and subtype
+// are the indexed text columns.
+func (s *Store) initFTSTable() {
+	// Was the table already present before this call? Used to decide whether a
+	// fresh-create backfill is needed.
+	existed := s.ftsAvailable()
+
+	if _, err := s.db.Exec(
+		`CREATE VIRTUAL TABLE IF NOT EXISTS nodes_fts USING fts5(
+			node_id UNINDEXED,
+			content,
+			subtype
+		)`,
+	); err != nil {
+		// no-fts5 binary: log once, continue. Keyword recall degrades to nothing.
+		fmt.Fprintf(os.Stderr, "cerebro: FTS5 keyword index unavailable (%v); keyword recall disabled\n", err)
+		return
+	}
+
+	// Freshly created on a brain that already has nodes: one-time backfill so the
+	// keyword index reflects existing memories (Out-of-Scope: one-time backfill
+	// on first open, no re-embedding). The nodes-table guard avoids a spurious
+	// "no such table: nodes" log on fresh Init, where migrateSchema runs this
+	// before applySchema creates the nodes table.
+	if !existed && s.tableExists("nodes") {
+		if _, err := s.db.Exec(
+			`INSERT INTO nodes_fts (node_id, content, subtype)
+				SELECT id, content, COALESCE(subtype, '') FROM nodes WHERE status = 'active'`,
+		); err != nil {
+			fmt.Fprintf(os.Stderr, "cerebro: backfilling nodes_fts failed (%v); keyword recall may be incomplete\n", err)
+		}
+	}
+}
+
+// tableExists reports whether a regular table of the given name exists.
+func (s *Store) tableExists(name string) bool {
+	var got string
+	err := s.db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, name,
+	).Scan(&got)
+	return err == nil && got == name
 }
 
 // InitVectorTable creates the vec_nodes virtual table with the given dimensions.
@@ -175,6 +254,22 @@ func (s *Store) migrateSchema() error {
 
 		if err := tx.Commit(); err != nil {
 			return fmt.Errorf("committing v1->v2 migration: %w", err)
+		}
+		version = "2"
+	}
+
+	// v2 -> v3: create + backfill the nodes_fts FTS5 keyword index (agentic-2lak).
+	// initFTSTable is best-effort, idempotent (CREATE … IF NOT EXISTS), and
+	// self-healing: it is called UNCONDITIONALLY on every Open so that the FIRST
+	// fts5-tagged binary to open a v2-or-later brain creates + backfills the
+	// index, even if a prior no-fts5 binary already advanced the version to "3"
+	// without creating the table (R4 — the no-fts5 binary logs-and-skips but does
+	// NOT hard-fail). The version bump records the upgrade; the table create is
+	// decoupled from it precisely so the build-tag-absent path stays graceful.
+	s.initFTSTable()
+	if version == "2" {
+		if err := s.SetMeta("schema_version", "3"); err != nil {
+			return fmt.Errorf("updating schema version to 3: %w", err)
 		}
 	}
 

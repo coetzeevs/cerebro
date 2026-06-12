@@ -316,8 +316,8 @@ func TestStats(t *testing.T) {
 	if stats.ActiveNodes != 2 {
 		t.Errorf("expected 2 active nodes, got %d", stats.ActiveNodes)
 	}
-	if stats.SchemaVersion != "2" {
-		t.Errorf("expected schema_version=2, got %q", stats.SchemaVersion)
+	if stats.SchemaVersion != "3" {
+		t.Errorf("expected schema_version=3, got %q", stats.SchemaVersion)
 	}
 }
 

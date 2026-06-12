@@ -4,7 +4,7 @@ BINARY  := cerebro
 INSTALL := /usr/local/bin/$(BINARY)
 
 build:
-	go build -o $(BINARY) ./cmd/cerebro
+	go build -tags fts5 -o $(BINARY) ./cmd/cerebro
 
 install: build
 	cp $(BINARY) $(INSTALL)
@@ -15,10 +15,10 @@ uninstall:
 	@echo "Removed $(INSTALL)"
 
 test:
-	go test ./... -race
+	go test -tags fts5 ./... -race
 
 test-cover:
-	go test ./... -race -coverprofile=coverage.out
+	go test -tags fts5 ./... -race -coverprofile=coverage.out
 	go tool cover -func=coverage.out
 
 lint:

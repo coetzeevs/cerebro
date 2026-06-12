@@ -27,8 +27,8 @@ func TestInitAndOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "2" {
-		t.Fatalf("expected schema_version=2, got %q", ver)
+	if ver != "3" {
+		t.Fatalf("expected schema_version=3, got %q", ver)
 	}
 
 	_ = s.Close()
@@ -99,10 +99,11 @@ func TestInit_ReInitOnV1Schema(t *testing.T) {
 	}
 	defer func() { _ = s.Close() }()
 
-	// Verify migration happened: updated_at column should exist
+	// Verify migration happened: updated_at column should exist and the version
+	// advanced to the current schema version (3, after the nodes_fts bump).
 	ver, _ := s.GetMeta("schema_version")
-	if ver != "2" {
-		t.Errorf("expected schema_version=2 after re-init, got %q", ver)
+	if ver != "3" {
+		t.Errorf("expected schema_version=3 after re-init, got %q", ver)
 	}
 }
 

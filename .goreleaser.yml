@@ -10,6 +10,8 @@ builds:
     goarch:
       - arm64
       - amd64
+    tags:
+      - fts5
     flags:
       - -trimpath
     ldflags:

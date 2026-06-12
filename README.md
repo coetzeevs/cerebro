@@ -182,6 +182,7 @@ Available settings:
 | `rerank_enabled` | `false` | Enable local cross-encoder reranking of recall candidates (see below) |
 | `rerank_command` | _(empty)_ | Local reranker subprocess; empty falls back to `CEREBRO_RERANK_COMMAND` env or disables |
 | `rerank_fusion` | `rrf` | Combine mode when reranking is on: `rrf` (Reciprocal Rank Fusion) or `reorder` (legacy pure-reorder) |
+| `bm25_enabled` | `true` | BM25/FTS5 keyword recall — always-on when the binary has the `fts5` build tag. `false` is an eval/diagnostic seam, not a feature toggle (see below) |
 
 Config values travel with the brain — they are preserved across `export`/`import`.
 
@@ -234,6 +235,34 @@ unset/missing/crashes or returns malformed, short, or non-finite output, cerebro
 logs a one-line stderr warning and falls back to the pre-rerank composite order
 — recall is never worse than disabled. The command is run argv-array style
 (never a shell) with a bounded timeout.
+
+### BM25 keyword recall (agentic-2lak)
+
+`recall`/`search` compose a **BM25 keyword lane** alongside vector similarity, so
+exact-identifier and exact-term queries (a ticket ID like `HS-049`, a precise
+symbol name) surface the memory that literally contains the token — cases pure
+semantic similarity misses. A `nodes_fts` FTS5 virtual table mirrors each active
+memory's content + subtype; the keyword lane runs an FTS5 `bm25()` ranking and is
+fused with the vector/composite lane by **Reciprocal Rank Fusion** (`k=60`)
+*before* the optional reranker. The four-signal composite scorer weights are
+unchanged — BM25 enters via recall-layer fusion, not by re-weighting the
+composite. See [ADR-013](docs/adrs/ADR-013-bm25-fts5-keyword-recall.md) and
+[`docs/evals/bm25-results.md`](docs/evals/bm25-results.md).
+
+**Requires the `fts5` build tag.** `mattn/go-sqlite3` gates FTS5 behind a CGO
+build tag (no new Go dependency — it is a compile flag, not a module). The
+`Makefile`, CI, and goreleaser config all set it, so released Homebrew binaries
+and `make build` link FTS5. If you build by hand, use
+`go build -tags fts5 ./cmd/cerebro` — a binary without the tag runs normally but
+the keyword lane silently contributes nothing (graceful degrade: store open and
+writes are never coupled to the tag).
+
+**`bm25_enabled` is a diagnostic seam, not a feature toggle.** BM25 is always-on
+when the binary has the `fts5` tag. `cerebro config set bm25_enabled false`
+short-circuits the keyword lane to the literal pre-BM25 pipeline — its purpose is
+to produce the same-session BM25-disabled baseline for non-regression evaluation
+(see the eval protocol in `docs/evals/bm25-results.md`), not to let end users opt
+out of keyword recall.
 
 ## Go library usage
 

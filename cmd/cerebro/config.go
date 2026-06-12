@@ -73,6 +73,18 @@ var configRegistry = map[string]configParam{
 		Default:     "true",
 		Validate:    validateBool,
 	},
+	"expand_threshold": {
+		Key:         "expand_threshold",
+		Description: "Skip graph expansion when the top-1 vector cosine similarity strictly exceeds this value (agentic-73l6). 0.0 disables the condition.",
+		Default:     "0.8",
+		Validate:    validateUnitFloat,
+	},
+	"expand_spread_threshold": {
+		Key:         "expand_spread_threshold",
+		Description: "Skip graph expansion when the full top-K similarity spread (top-1 minus top-K) is strictly below this value (agentic-73l6). 0.0 (default) disables the condition — on the current brain the spread anti-correlates with confidence, so it ships OFF.",
+		Default:     "0.0",
+		Validate:    validateUnitFloat,
+	},
 }
 
 // configMetaPrefix is prepended to config keys when storing in schema_meta.
@@ -417,6 +429,8 @@ func configRegistryKeys() []string {
 		"rerank_command",
 		"rerank_fusion",
 		"bm25_enabled",
+		"expand_threshold",
+		"expand_spread_threshold",
 	}
 }
 

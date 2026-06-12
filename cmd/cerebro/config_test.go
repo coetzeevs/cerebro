@@ -374,6 +374,33 @@ func TestConfigValidation_RerankFusion(t *testing.T) {
 	}
 }
 
+// S-1 (agentic-73l6): validateUnitFloat must reject NaN. strconv.ParseFloat
+// recognizes "NaN" (case-insensitive), and IEEE-754 NaN compares false to
+// everything, so the pre-fix `f < 0 || f > 1` range check never fired on NaN
+// — `cerebro config set <unit-float-key> NaN` was silently ACCEPTED. The fix
+// (math.IsNaN) hardens the shared validator for all unit-float keys:
+// gc_threshold, search_threshold, recall_threshold, expand_threshold,
+// expand_spread_threshold.
+func TestValidateUnitFloat_RejectsNaN(t *testing.T) {
+	for _, v := range []string{"NaN", "nan", "-NaN"} {
+		if err := validateUnitFloat(v); err == nil {
+			t.Errorf("validateUnitFloat(%q) expected error, got nil (S-1 NaN hole)", v)
+		}
+	}
+	// ±Inf and overflow were already rejected — pin that this stays true.
+	for _, v := range []string{"+Inf", "-Inf", "Infinity", "1e400"} {
+		if err := validateUnitFloat(v); err == nil {
+			t.Errorf("validateUnitFloat(%q) expected error, got nil", v)
+		}
+	}
+	// In-range values still accepted.
+	for _, v := range []string{"0", "0.5", "1", "0.80"} {
+		if err := validateUnitFloat(v); err != nil {
+			t.Errorf("validateUnitFloat(%q) unexpected error: %v", v, err)
+		}
+	}
+}
+
 // M2: validateBool accepts true/false and rejects anything else.
 func TestValidateBool(t *testing.T) {
 	for _, v := range []string{"true", "false"} {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/coetzeevs/cerebro/internal/store"
@@ -95,7 +96,9 @@ func validateUnitFloat(s string) error {
 	if err != nil {
 		return fmt.Errorf("must be a number between 0 and 1, got %q", s)
 	}
-	if f < 0 || f > 1 {
+	// S-1 (agentic-73l6): ParseFloat accepts "NaN" (case-insensitive), and NaN
+	// compares false to everything, so `f < 0 || f > 1` alone never rejects it.
+	if math.IsNaN(f) || f < 0 || f > 1 {
 		return fmt.Errorf("must be between 0 and 1, got %s", s)
 	}
 	return nil

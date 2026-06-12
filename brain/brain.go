@@ -302,9 +302,18 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 		return nil, err
 	}
 
-	expanded, err := b.store.ExpandGraph(results, limit)
-	if err != nil {
-		return nil, err
+	// Lazy expansion gate (agentic-73l6): skip ExpandGraph when the vector
+	// top-K is already confident. The else-branch is the pre-feature path
+	// verbatim; at (0.0, 0.0) the predicate is constant-false (AC3).
+	var expanded []store.ScoredNode
+	if shouldSkipExpansion(results, limit, resolveExpandThreshold(b.store), resolveExpandSpreadThreshold(b.store)) {
+		noteExpansionSkipped(b.store)
+		expanded = cutByScore(results, limit)
+	} else {
+		expanded, err = b.store.ExpandGraph(results, limit)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Compose the BM25 keyword lane (agentic-2lak) BEFORE the cut/filter. When
@@ -340,9 +349,18 @@ func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32,
 	if err != nil {
 		return nil, err
 	}
-	expanded, err := b.store.ExpandGraph(results, over)
-	if err != nil {
-		return nil, err
+
+	// Lazy expansion gate (agentic-73l6) — same seam as the disabled path,
+	// evaluated on this site's own over-retrieved result set.
+	var expanded []store.ScoredNode
+	if shouldSkipExpansion(results, over, resolveExpandThreshold(b.store), resolveExpandSpreadThreshold(b.store)) {
+		noteExpansionSkipped(b.store)
+		expanded = cutByScore(results, over)
+	} else {
+		expanded, err = b.store.ExpandGraph(results, over)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Compose the BM25 keyword lane into the over-retrieved candidate set BEFORE
@@ -381,14 +399,29 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		perStore = rerankOverRetrieve
 	}
 
+	// Lazy expansion gate (agentic-73l6): thresholds are resolved ONCE per
+	// query from the PROJECT brain's config (the resolveRerankEnabled(b.store)
+	// precedent above — the project brain's config governs the whole call).
+	// Each store's expansion is then gated independently on its own result
+	// set's confidence, and BOTH skip events — including the global store's —
+	// increment the PROJECT brain's stats.expansion_skips counter (TL Finding
+	// 2: a single counter keeps the skip-rate arithmetic on one brain; do not
+	// "fix" the global site to global.store).
+	expTh, spTh := resolveExpandThreshold(b.store), resolveExpandSpreadThreshold(b.store)
+
 	// Search project store
 	projectResults, err := b.store.VectorSearch(vec, perStore, threshold)
 	if err != nil {
 		return nil, fmt.Errorf("project search: %w", err)
 	}
-	projectResults, err = b.store.ExpandGraph(projectResults, perStore)
-	if err != nil {
-		return nil, fmt.Errorf("project graph expansion: %w", err)
+	if shouldSkipExpansion(projectResults, perStore, expTh, spTh) {
+		noteExpansionSkipped(b.store)
+		projectResults = cutByScore(projectResults, perStore)
+	} else {
+		projectResults, err = b.store.ExpandGraph(projectResults, perStore)
+		if err != nil {
+			return nil, fmt.Errorf("project graph expansion: %w", err)
+		}
 	}
 
 	// Search global store
@@ -396,9 +429,14 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 	if err != nil {
 		return nil, fmt.Errorf("global search: %w", err)
 	}
-	globalResults, err = global.store.ExpandGraph(globalResults, perStore)
-	if err != nil {
-		return nil, fmt.Errorf("global graph expansion: %w", err)
+	if shouldSkipExpansion(globalResults, perStore, expTh, spTh) {
+		noteExpansionSkipped(b.store) // project brain's counter — see above
+		globalResults = cutByScore(globalResults, perStore)
+	} else {
+		globalResults, err = global.store.ExpandGraph(globalResults, perStore)
+		if err != nil {
+			return nil, fmt.Errorf("global graph expansion: %w", err)
+		}
 	}
 
 	if rerankOn {

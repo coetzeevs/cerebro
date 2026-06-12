@@ -76,7 +76,7 @@ var configRegistry = map[string]configParam{
 	"expand_threshold": {
 		Key:         "expand_threshold",
 		Description: "Skip graph expansion when the top-1 vector cosine similarity strictly exceeds this value (agentic-73l6). 0.0 disables the condition.",
-		Default:     "0.8",
+		Default:     "0.75",
 		Validate:    validateUnitFloat,
 	},
 	"expand_spread_threshold": {

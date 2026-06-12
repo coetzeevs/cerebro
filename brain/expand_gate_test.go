@@ -228,8 +228,12 @@ func TestResolveExpandThresholds(t *testing.T) {
 // configRegistry Default strings, README rows and CHANGELOG must agree with
 // these constants (TL Minor 4 — four-surface consistency).
 func TestExpandGateShippedDefaults(t *testing.T) {
-	if defaultExpandThreshold != 0.80 {
-		t.Errorf("defaultExpandThreshold = %v, want 0.80 (Design §5, sweep-confirmed)", defaultExpandThreshold)
+	// 0.75 is the §5 selection-rule outcome of the live eval sweep
+	// (docs/evals/lazy-gating-results.md): the LOWEST candidate ≥ 0.75 with
+	// all four metrics bit-identical to the same-session floor and a non-zero
+	// skip-rate (4/18 = 22%). 0.72 regressed MRR (0.6459 → 0.6181) and is out.
+	if defaultExpandThreshold != 0.75 {
+		t.Errorf("defaultExpandThreshold = %v, want 0.75 (Design §5 selection rule, sweep-adjusted)", defaultExpandThreshold)
 	}
 	if defaultExpandSpreadThreshold != 0.0 {
 		t.Errorf("defaultExpandSpreadThreshold = %v, want 0.0 (spread ships OFF — live anti-correlation, ledger #14)", defaultExpandSpreadThreshold)

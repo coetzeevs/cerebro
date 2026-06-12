@@ -387,7 +387,7 @@ func TestConfigRegistry_ExpandGateKeys(t *testing.T) {
 		key         string
 		wantDefault string
 	}{
-		{"expand_threshold", "0.8"},
+		{"expand_threshold", "0.75"}, // §5 selection rule on the live sweep — see docs/evals/lazy-gating-results.md
 		{"expand_spread_threshold", "0.0"},
 	}
 	registryKeys := configRegistryKeys()

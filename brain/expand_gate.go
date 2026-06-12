@@ -38,10 +38,12 @@ const metaExpansionSkips = "stats.expansion_skips"
 // surfaces in sync when re-sweeping.
 const (
 	// defaultExpandThreshold ships ACTIVE: skip expansion when the top-1
-	// cosine similarity strictly exceeds 0.80 — the most conservative
-	// candidate with a non-zero live skip-rate (within the L-RAG-cited 8–26%
-	// retrieval-reduction envelope). 0.0 disables the condition.
-	defaultExpandThreshold = 0.80
+	// cosine similarity strictly exceeds 0.75 — the §5 selection-rule outcome
+	// of the live eval sweep (lowest candidate ≥ 0.75 with all four metrics
+	// bit-identical to the same-session floor and a non-zero skip-rate, 4/18
+	// = 22%, inside the L-RAG-cited 8–26% retrieval-reduction envelope; 0.72
+	// regressed MRR and was rejected). 0.0 disables the condition.
+	defaultExpandThreshold = 0.75
 	// defaultExpandSpreadThreshold ships OFF: on the live brain the top-1 to
 	// top-K spread ANTI-correlates with confidence (the lowest-confidence
 	// queries have the smallest spreads), so an active spread default would

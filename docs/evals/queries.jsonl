@@ -8,3 +8,11 @@
 {"id":"q08","query":"subtype filter post scoring OO-011 cerebro","note":"retrieve memories about the OO-011 subtype filter feature implementation"}
 {"id":"q09","query":"ADR architectural decision record cerebro design","note":"retrieve memories about architectural decisions recorded in cerebro ADRs"}
 {"id":"q10","query":"noop embedder test early return Brain.Search unit test","note":"retrieve memories about the testability pattern for Brain.Search without Ollama"}
+{"id": "q11", "query": "what did OO-015 decide about determinism enforcement", "note": "exact-identifier: retrieve the canonical OO-015 decision/completion record (determinism-first enforcement gates)"}
+{"id": "q12", "query": "BUG-001 root cause system prompt strip fix", "note": "exact-identifier: retrieve the BUG-001 implementation record describing the system-prompt-strip root cause and fix"}
+{"id": "q13", "query": "what was the outcome of HS-049 iteration three", "note": "exact-identifier: retrieve the HS-049 QA iteration-3 record (the async-write-race rejection findings)"}
+{"id": "q14", "query": "HS-030 root cause cerebro dedup zero delta", "note": "exact-identifier: retrieve the HS-030 filing record describing the cerebro_remember dedup zero-delta root cause"}
+{"id": "q15", "query": "summary of OO-011 work and the Brain.Search decision", "note": "exact-identifier: retrieve the OO-011 architectural-decision record (Brain.Search subtypeFilter breaking change)"}
+{"id": "q16", "query": "agentic-2ixw recall dip resolved RRF rank fusion", "note": "exact-identifier: retrieve the agentic-2ixw record explaining the recall@10 dip resolved via RRF rank fusion"}
+{"id": "q17", "query": "notes on agentic-x183 eval harness", "note": "exact-identifier: retrieve the canonical agentic-x183 record (recall-quality eval harness, merged/done)"}
+{"id": "q18", "query": "HS-046 pi-cerebro boundary enforcement status", "note": "exact-identifier: retrieve the HS-046 record (pi-cerebro memory-write boundary enforcement, merged)"}

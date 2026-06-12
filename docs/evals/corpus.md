@@ -9,11 +9,30 @@
 | **Active nodes at assembly** | 537 |
 | **Embedding model** | `nomic-embed-text` |
 | **Embedding dimensions** | 768 |
-| **Assembly date** | 2026-06-02 |
+| **Assembly date** | 2026-06-02 (q01–q10); 2026-06-12 (q11–q18, agentic-2lak) |
+| **Active nodes at q11–q18 assembly** | 557 |
 
 > **S-LOW-2 guardrail:** This manifest records the brain *path class* only — never the raw
 > `~/.cerebro/projects/<sha256>.sqlite` resolved path. The SHA-256 hash encodes the operator's
 > realpath and must not be disclosed in committed artefacts.
+
+## Query set
+
+The corpus has **18 queries** in two groups:
+
+- **`q01`–`q10` — multi-word semantic queries** (original x183 assembly): abstract
+  engineering topics with small, highly-relevant ground-truth sets; vector recall
+  already places the ground-truth in top-20 on most of them.
+- **`q11`–`q18` — multi-word exact-identifier queries** (added under agentic-2lak):
+  realistic questions a user/agent would actually ask that *contain an exact
+  identifier* (`OO-015`, `BUG-001`, `HS-049`, `HS-030`, `OO-011`, `agentic-2ixw`,
+  `agentic-x183`, `HS-046`). Each ground-truth node is the genuine **canonical
+  record** for that identifier (the DONE / decision / root-cause node), found by
+  inspecting the live brain — **not** cherry-picked to rig a win. These stress the
+  exact-identifier-match gap that BM25 keyword recall closes; see
+  `docs/evals/bm25-results.md` for the per-query off→on verification (three are
+  genuine recall@K wins; the rest are honest MRR-only improvements where the target
+  already sat in vector top-5).
 
 ## Ground-truth construction method
 
@@ -21,7 +40,9 @@ Ground-truth was assembled by:
 
 1. Issuing `cerebro recall <query>` for each query in `queries.jsonl` against the live brain.
 2. Manually reviewing the top-returned nodes and selecting the node IDs that are clearly
-   relevant to the query's *topic* (not just syntactically co-present).
+   relevant to the query's *topic* (not just syntactically co-present). For the
+   exact-identifier queries (q11–q18), the canonical record for the identifier was
+   confirmed by reading the node content directly.
 3. Recording only the opaque RFC-4122 UUID node IDs in `ground-truth.jsonl` — no raw
    memory content is committed to this repository.
 

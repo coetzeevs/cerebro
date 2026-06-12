@@ -37,7 +37,7 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Run tests
-        run: go test ./... -race -coverprofile=coverage.out
+        run: go test -tags fts5 ./... -race -coverprofile=coverage.out
       - name: Show coverage
         run: go tool cover -func=coverage.out
 

@@ -52,6 +52,20 @@ const (
 // more); 60 is the parameter-free, no-tuning default.
 const defaultRRFK = 60
 
+// resolveBM25Enabled reads config.bm25_enabled from the store (agentic-2lak
+// D5). BM25 keyword recall is ON BY DEFAULT (always-on when FTS5 is present, per
+// the ticket's Out-of-Scope), so an UNSET row, or any value other than the
+// literal "false", resolves to enabled. Only "false" disables it — that is the
+// eval/diagnostic seam that produces the same-session BM25-disabled floor for
+// the AC4-NR non-regression protocol; it is NOT an end-user feature toggle.
+//
+// Env-free by design (mirrors resolveRerankEnabled): the gate is a brain-config
+// decision read via GetMeta, so the brain has no import cycle on cmd/cerebro.
+func resolveBM25Enabled(s *store.Store) bool {
+	val, _ := s.GetMeta(rerankConfigPrefix + "bm25_enabled")
+	return val != "false"
+}
+
 // resolveRerankEnabled reads config.rerank_enabled from the store. The
 // gate is strict: only the literal "true" enables reranking; an unset row,
 // "false", or any other value resolves to disabled (M4: ""→false default).

@@ -42,6 +42,38 @@ func TestConfigRegistry_UnknownKey(t *testing.T) {
 	}
 }
 
+// TestConfigRegistry_BM25Enabled (agentic-2lak D5) — bm25_enabled is registered,
+// defaults to "true" (BM25 always-on when FTS5 present), validates as a bool, and
+// is listed in configRegistryKeys so `cerebro config list` shows it (M3).
+func TestConfigRegistry_BM25Enabled(t *testing.T) {
+	p, ok := configRegistry["bm25_enabled"]
+	if !ok {
+		t.Fatal("expected key 'bm25_enabled' in configRegistry")
+	}
+	if p.Default != "true" {
+		t.Errorf("bm25_enabled default = %q, want \"true\"", p.Default)
+	}
+	if err := p.Validate("false"); err != nil {
+		t.Errorf("Validate(\"false\") unexpected error: %v", err)
+	}
+	if err := p.Validate("true"); err != nil {
+		t.Errorf("Validate(\"true\") unexpected error: %v", err)
+	}
+	if err := p.Validate("yes"); err == nil {
+		t.Error("Validate(\"yes\") expected error, got nil")
+	}
+	// M3: must be in the hand-maintained list-order slice.
+	found := false
+	for _, k := range configRegistryKeys() {
+		if k == "bm25_enabled" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("bm25_enabled missing from configRegistryKeys() — `config list` would omit it (M3)")
+	}
+}
+
 // --- Validation tests ---
 
 func TestConfigValidation_PrimeLimit(t *testing.T) {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"math"
 	"time"
@@ -96,6 +97,21 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 	}
 	defer deleteNodeStmt.Close() //nolint:errcheck // best-effort cleanup
 
+	// nodes_fts delete-sync (agentic-2lak). Mirrors the vec_nodes pattern above:
+	// nil when nodes_fts is absent (no-fts5 binary) so the GC loop skips it
+	// gracefully (D2). Inside the GC tx so an eviction and its FTS removal commit
+	// atomically (S-PI-N2) — the keyword index can never retain an evicted node.
+	var deleteFTSStmt *sql.Stmt
+	if s.ftsAvailable() {
+		deleteFTSStmt, err = tx.Prepare(`DELETE FROM nodes_fts WHERE node_id = ?`)
+		if err != nil {
+			deleteFTSStmt = nil
+		}
+		if deleteFTSStmt != nil {
+			defer deleteFTSStmt.Close() //nolint:errcheck // best-effort cleanup
+		}
+	}
+
 	for i := range candidates {
 		n := candidates[i].node
 		if _, err := archiveStmt.Exec(n.ID, n.Type, nullString(n.Subtype), n.Content, nullJSON(n.Metadata), n.Importance, n.Status, n.CreatedAt.Format(time.RFC3339)); err != nil {
@@ -108,6 +124,11 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 		}
 		if _, err := deleteNodeStmt.Exec(n.ID); err != nil {
 			return nil, fmt.Errorf("deleting node %s: %w", n.ID, err)
+		}
+		if deleteFTSStmt != nil {
+			if _, err := deleteFTSStmt.Exec(n.ID); err != nil {
+				return nil, fmt.Errorf("deleting nodes_fts row for %s: %w", n.ID, err)
+			}
 		}
 	}
 

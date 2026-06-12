@@ -8,15 +8,19 @@ import (
 	"time"
 )
 
-// TestSchemaVersionIsTwo verifies the schemaVersion const is "2" after the migration.
-func TestSchemaVersionIsTwo(t *testing.T) {
+// TestSchemaVersionIsCurrent verifies a freshly initialised brain carries the
+// current schemaVersion. Bumped 2->3 for the nodes_fts FTS5 keyword index
+// (agentic-2lak); the version advances on both fts5 and no-fts5 binaries (the
+// FTS table create is decoupled from the version bump so the no-fts5 path stays
+// graceful).
+func TestSchemaVersionIsCurrent(t *testing.T) {
 	s := testStore(t)
 	ver, err := s.GetMeta("schema_version")
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "2" {
-		t.Fatalf("expected schema_version=2, got %q", ver)
+	if ver != "3" {
+		t.Fatalf("expected schema_version=3, got %q", ver)
 	}
 }
 
@@ -46,8 +50,8 @@ func TestMigrationFromV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta after migration: %v", err)
 	}
-	if ver != "2" {
-		t.Fatalf("expected schema_version=2 after migration, got %q", ver)
+	if ver != "3" {
+		t.Fatalf("expected schema_version=3 after migration, got %q", ver)
 	}
 
 	// Verify the columns exist and are queryable.
@@ -116,22 +120,24 @@ func buildV1Database(t *testing.T, path string) (*Store, error) {
 	return s, nil
 }
 
-// TestMigrationIdempotency verifies opening a v2 database does not error.
+// TestMigrationIdempotency verifies re-opening a current-version database does
+// not error and leaves the schema version unchanged.
 func TestMigrationIdempotency(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "v2.sqlite")
+	path := filepath.Join(dir, "current.sqlite")
 
-	// Create a v2 database.
+	// Create a current-version database.
 	s, err := Init(path)
 	if err != nil {
 		t.Fatalf("Init: %v", err)
 	}
 	_ = s.Close()
 
-	// Open it again — migrateSchema() should be a no-op.
+	// Open it again — migrateSchema() should be a no-op for the version bump
+	// (initFTSTable is idempotent CREATE … IF NOT EXISTS).
 	s2, err := Open(path)
 	if err != nil {
-		t.Fatalf("Open v2 database: %v", err)
+		t.Fatalf("Open database: %v", err)
 	}
 	defer func() { _ = s2.Close() }()
 
@@ -139,8 +145,8 @@ func TestMigrationIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "2" {
-		t.Fatalf("expected schema_version=2, got %q", ver)
+	if ver != "3" {
+		t.Fatalf("expected schema_version=3, got %q", ver)
 	}
 }
 

@@ -307,10 +307,19 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 		return nil, err
 	}
 
-	// Post-ExpandGraph subtype filter: applied after all scoring so that
-	// composite scores and threshold are unaffected. Every returned node
-	// is guaranteed to match the requested subtype.
-	return filterScoredNodesBySubtype(expanded, subtypeFilter), nil
+	// Compose the BM25 keyword lane (agentic-2lak) BEFORE the cut/filter. When
+	// bm25_enabled=false this is the literal pre-BM25 path (TL finding 2); when
+	// enabled, the keyword-aware fused set replaces the composite order. The cut
+	// to limit is then applied so a keyword-only node can enter the result set.
+	fused := b.fuseKeywordLane(query, expanded, limit)
+	if limit > 0 && len(fused) > limit {
+		fused = fused[:limit]
+	}
+
+	// Post-fusion subtype filter: applied after all scoring so that composite
+	// scores and threshold are unaffected. Every returned node is guaranteed to
+	// match the requested subtype.
+	return filterScoredNodesBySubtype(fused, subtypeFilter), nil
 }
 
 // searchReranked is the enabled-path recall pipeline (agentic-2ixw): it
@@ -336,7 +345,14 @@ func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32,
 		return nil, err
 	}
 
-	reranked := applyRerankWithFusion(ctx, newReranker(b.store), query, expanded, limit, resolveRerankFusion(b.store))
+	// Compose the BM25 keyword lane into the over-retrieved candidate set BEFORE
+	// the reranker runs (agentic-2lak D4), so the 2ixw reranker receives a
+	// keyword-aware-but-composite-ordered set exactly as it does today. The
+	// reranker code and its config keys are untouched. When bm25_enabled=false
+	// fuseKeywordLane is the identity, so this path is byte-identical to 2ixw.
+	fused := b.fuseKeywordLane(query, expanded, over)
+
+	reranked := applyRerankWithFusion(ctx, newReranker(b.store), query, fused, limit, resolveRerankFusion(b.store))
 	return filterScoredNodesBySubtype(reranked, subtypeFilter), nil
 }
 
@@ -391,14 +407,32 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		// mergeSearchResults semantics are untouched — merge keeps the full
 		// pool by passing a wide ceiling, rerank reorders, then we cut to limit.
 		merged := mergeSearchResults(projectResults, globalResults, perStore*2)
-		reranked := applyRerankWithFusion(ctx, newReranker(b.store), query, merged, limit, resolveRerankFusion(b.store))
+		// Compose the project-store keyword lane into the merged pool before the
+		// reranker (agentic-2lak). The global store's keyword lane is out of scope
+		// for this single-query path; fusion is the identity when bm25 disabled.
+		fused := b.fuseKeywordLane(query, merged, perStore*2)
+		reranked := applyRerankWithFusion(ctx, newReranker(b.store), query, fused, limit, resolveRerankFusion(b.store))
 		return filterScoredNodesBySubtype(reranked, subtypeFilter), nil
 	}
 
-	merged := mergeSearchResults(projectResults, globalResults, limit)
+	// Disabled-BM25 path is the LITERAL pre-BM25 merge-then-cut (TL finding 2):
+	// merge with the limit ceiling exactly as before, no fusion. This preserves
+	// the AC4-NR same-session disabled floor byte-for-byte.
+	if !resolveBM25Enabled(b.store) {
+		merged := mergeSearchResults(projectResults, globalResults, limit)
+		return filterScoredNodesBySubtype(merged, subtypeFilter), nil
+	}
+
+	// Enabled: merge a wide pool so a keyword-only node can enter, fuse the
+	// keyword lane, then cut to limit.
+	merged := mergeSearchResults(projectResults, globalResults, perStore*2)
+	fused := b.fuseKeywordLane(query, merged, perStore*2)
+	if limit > 0 && len(fused) > limit {
+		fused = fused[:limit]
+	}
 
 	// Post-merge subtype filter: applied after all scoring and graph expansion.
-	return filterScoredNodesBySubtype(merged, subtypeFilter), nil
+	return filterScoredNodesBySubtype(fused, subtypeFilter), nil
 }
 
 // filterScoredNodesBySubtype applies an optional subtype filter to a slice of

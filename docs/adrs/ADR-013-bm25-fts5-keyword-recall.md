@@ -108,6 +108,44 @@ from the existing active nodes. `initFTSTable` is idempotent and self-healing �
 called on every `Open` — so the first fts5-tagged binary to open a brain creates
 the index even if a prior no-fts5 binary already advanced the version.
 
+### D7 — Tokenize-OR MATCH builder, not whole-query phrase (rework)
+
+The MATCH-expression builder (`buildMatchQuery`) **tokenises the query on
+whitespace, wraps each token in its own double-quoted FTS5 phrase (doubling
+internal `"`), and joins the phrases with ` OR `** — e.g.
+`"OO-015" OR "determinism" OR "wire"`.
+
+The first implementation wrapped the **whole** query in one FTS5 phrase
+(`"OO-015 determinism wire"`). An FTS5 phrase requires its terms to be
+**adjacent** in the indexed text (sqlite.org/fts5.html §3, "a string of one or
+more tokens enclosed in double quotes is a phrase"), so any multi-word query
+matched nothing. Live-proven against the 556-row dogfooded index: the whole-query
+phrase returned **0 rows**, while the tokenize-OR form returned **303 rows** and
+the single-term `"HS-049"` returned **36 rows**. Because the entire eval corpus is
+multi-word, the keyword lane was empty on every query and BM25 was inert — the
+defect that made the first measurement show "no win". The single-term
+exact-identifier case (the bare `"HS-049"`) always worked; only multi-word queries
+were broken.
+
+Tokenize-OR keeps injection safety **exactly** (S-PI-N1): every user token is an
+individual quoted phrase, so no FTS5 operator from user text (`AND/OR/NOT/NEAR/*/:
+/^/( )`) reaches the parser as syntax — it is literal phrase content. The ` OR ` is
+**ours**, not the user's. A user word like `OR`/`AND`/`NEAR` becomes a quoted
+literal phrase (inert, live-proven). Each term still matches independently, so the
+rare identifier token matches inside a multi-word query and `bm25()`'s term-rarity
+weighting (IDF) floats the rare identifier matches to the top of the keyword lane.
+
+Noise consideration: OR-joining means a very common token (e.g. "the") can match
+many nodes. This is acceptable because (a) `bm25()` down-weights common (low-IDF)
+terms so they don't dominate the lane ranking, (b) RRF consumes only the *rank* of
+each keyword hit and fuses it with the vector lane, and (c) the `width`/`limit` cut
+bounds the lane size. The empirical result (`docs/evals/bm25-results.md`) confirms
+no regression and a measured improvement, so the common-token noise does not harm
+recall in practice.
+
+Empty / all-whitespace input yields `""` (no tokens); `KeywordSearch`'s
+empty-query guard short-circuits before this is ever bound as a MATCH.
+
 ### Build tag on all build paths
 
 `-tags fts5` is added to the `Makefile` (`build`/`test`/`test-cover`),
@@ -123,16 +161,20 @@ The FTS5 MATCH query is a **second-order injection surface even under `?`
 parameter binding**: `?`-binding stops classic SQL injection, but the FTS5
 parser still treats the bound value as an *expression* — `AND/OR/NOT/NEAR/*/":/^`
 in user text error or silently change semantics. The MATCH-expression builder
-(`buildMatchQuery`) neutralises this by wrapping the whole user query as a single
-literal FTS5 phrase (double-quote-wrap, double internal quotes), so no operator
-from user text reaches the FTS5 parser. Live-proven (mattn/go-sqlite3 v1.14.34):
-every adversarial payload (`HS-049 AND`, `HS-049 OR cats`, stray quote,
-`content : cats`, `foo*`, `NEAR(a b)`, `^ticket`, embedded quotes) returns
-cleanly (no error, no column hijack), while exact `HS-049` still matches under
-the default `unicode61` tokenizer. An adversarial unit test covers the exact set
-(S-PI-N1). This is graded availability/correctness (not breach) for the
-single-operator local trust boundary, and re-grades to A03 HIGH if `nodes_fts`
-MATCH is ever fed external/multi-tenant query input.
+(`buildMatchQuery`, D7) neutralises this by tokenising the query on whitespace and
+wrapping **each** token as its own literal FTS5 phrase (double-quote-wrap, double
+internal quotes), joined with our own ` OR `, so no operator from user text
+reaches the FTS5 parser as syntax. Live-proven (mattn/go-sqlite3 v1.14.34): every
+single-term adversarial payload (`HS-049 AND`, `HS-049 OR cats`, stray quote,
+`content : cats`, `foo*`, `NEAR(a b)`, `^ticket`, embedded quotes) AND every
+multi-word injection payload (`foo HS-049" OR x`, `a NEAR(b c)`, `x* y`,
+`alpha AND beta OR gamma NOT delta`) returns cleanly (no error, no column hijack,
+no parser syntax error — proof the operator never reached the parser), while exact
+`HS-049` still matches under the default `unicode61` tokenizer. An adversarial unit
+test covers both the single-term and multi-word sets (S-PI-N1). This is graded
+availability/correctness (not breach) for the single-operator local trust
+boundary, and re-grades to A03 HIGH if `nodes_fts` MATCH is ever fed
+external/multi-tenant query input.
 
 ## Alternatives Rejected
 
@@ -144,8 +186,11 @@ MATCH is ever fed external/multi-tenant query input.
   (unbounded bm25 vs `[0,1]` cosine), re-tunes four shipped weights, high-risk
   for the non-regression floor (D3).
 - **`tokenize='unicode61 tokenchars '-''`** — considered for hyphenated IDs, but
-  the default `unicode61` tokenizer already matches `HS-049` via phrase-quoting
-  (live-proven count=1), so no custom tokenizer is warranted.
+  the default `unicode61` tokenizer already matches `HS-049` via per-token phrase
+  quoting (live-proven), so no custom tokenizer is warranted.
+- **Whole-query single-phrase MATCH** (the first implementation) — required all
+  query terms to be adjacent, so every multi-word query matched 0 rows and BM25
+  was inert; replaced by the tokenize-OR builder (D7).
 
 ## Consequences
 
@@ -153,11 +198,19 @@ MATCH is ever fed external/multi-tenant query input.
   dependencies and the four-signal composite weights unchanged.
 - The non-regression floor is structurally protected: with the keyword lane
   empty (or `bm25_enabled=false`), the fused order collapses to today's composite
-  order. Measured (same-session, both rerank paths) the BM25-on metrics equal the
-  BM25-off floor exactly — no regression. See `docs/evals/bm25-results.md`.
+  order. Measured (same-session, both rerank paths, N=3 deterministic) every
+  BM25-on metric is `>=` its same-session BM25-off floor — AC4-NR PASS. See
+  `docs/evals/bm25-results.md`.
 - Every binary must carry the `fts5` tag or keyword recall silently no-ops; the
   AC5a grep + AC5b released-binary probe are the controls.
-- The keyword lane reshapes the candidate set for exact-identifier queries
-  (new nodes enter the fused top-K), but the committed eval corpus is not
-  exact-identifier-stressed, so aggregate recall@K/MRR is unmoved on it — an
-  honest directional finding recorded in the results doc.
+- With the tokenize-OR builder (D7) and the corpus extended with 8 multi-word
+  exact-identifier queries (`q11`–`q18`), BM25 now shows a **measured aggregate
+  improvement**, not just a directional finding: on the default rerank=off path
+  the exact-id subset gains recall@5 +0.125, recall@10 +0.125, recall@20 +0.250
+  (0.75 → 1.00), MRR +0.309, and the full corpus lifts on every metric. On the
+  rerank=rrf path the cross-encoder already saturates recall@K on the exact-id
+  subset, so BM25's contribution there is rank-quality (MRR +0.18) rather than
+  coverage. Three of the eight new queries are genuine recall@K wins (the
+  canonical identifier node was outside vector top-K, often missed entirely, and
+  BM25 fusion pulls it in); the other five had the target already in vector top-5
+  and are recorded honestly as MRR-only improvements.

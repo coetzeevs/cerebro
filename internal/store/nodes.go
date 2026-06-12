@@ -39,6 +39,11 @@ func (s *Store) AddNode(opts *AddNodeOpts) (string, error) {
 		return "", fmt.Errorf("inserting node: %w", err)
 	}
 
+	// Sync the keyword index (agentic-2lak). Best-effort on the connection path:
+	// a transient FTS failure must not fail an AddNode whose nodes write already
+	// committed (graceful degrade, D2/S-PI-N2). No-op when nodes_fts is absent.
+	_ = s.syncFTSInsert(s.db, false, id, opts.Content, opts.Subtype)
+
 	return id, nil
 }
 
@@ -90,6 +95,19 @@ func (s *Store) UpdateNode(id string, opts UpdateNodeOpts) error {
 			return fmt.Errorf("updating subtype: %w", err)
 		}
 	}
+
+	// Refresh the keyword index (agentic-2lak) when content or subtype changed.
+	// Re-read the node's current content+subtype so the FTS row mirrors the full
+	// post-update state regardless of which field changed. Best-effort: a stale
+	// FTS row never fails an UpdateNode whose nodes write succeeded (D2). No-op
+	// when nodes_fts is absent.
+	if (opts.Content != nil || opts.Subtype != nil) && s.ftsAvailable() {
+		var content string
+		var subtype sql.NullString
+		if err := s.db.QueryRow(`SELECT content, subtype FROM nodes WHERE id = ?`, id).Scan(&content, &subtype); err == nil {
+			_ = s.syncFTSInsert(s.db, false, id, content, subtype.String)
+		}
+	}
 	return nil
 }
 
@@ -137,6 +155,18 @@ func (s *Store) SupersedeNode(oldID string, opts *AddNodeOpts) (string, error) {
 	)
 	if err != nil {
 		return "", fmt.Errorf("creating supersedes edge: %w", err)
+	}
+
+	// Sync the keyword index inside the SAME transaction (S-PI-N2): the old node
+	// becomes inactive (drop its FTS row) and the new active node is indexed. On
+	// the tx path the FTS write MUST succeed — a sync error propagates and rolls
+	// the whole supersede back, so nodes and nodes_fts can never half-commit. The
+	// helpers no-op gracefully when nodes_fts is absent (no-fts5 binary).
+	if err := s.deleteFTS(tx, true, oldID); err != nil {
+		return "", err
+	}
+	if err := s.syncFTSInsert(tx, true, newID, opts.Content, opts.Subtype); err != nil {
+		return "", err
 	}
 
 	if err := tx.Commit(); err != nil {

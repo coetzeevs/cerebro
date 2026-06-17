@@ -183,6 +183,8 @@ Available settings:
 | `rerank_command` | _(empty)_ | Local reranker subprocess; empty falls back to `CEREBRO_RERANK_COMMAND` env or disables |
 | `rerank_fusion` | `rrf` | Combine mode when reranking is on: `rrf` (Reciprocal Rank Fusion) or `reorder` (legacy pure-reorder) |
 | `bm25_enabled` | `true` | BM25/FTS5 keyword recall — always-on when the binary has the `fts5` build tag. `false` is an eval/diagnostic seam, not a feature toggle (see below) |
+| `expand_threshold` | 0.75 | Skip graph expansion when the top-1 vector cosine similarity strictly exceeds this value (range `[0,1]`; `0.0` disables — see below) |
+| `expand_spread_threshold` | 0.0 | Skip graph expansion when the full top-K similarity spread (top-1 − top-K) is strictly below this value (range `[0,1]`; `0.0` = off, the shipped default — see below) |
 
 Config values travel with the brain — they are preserved across `export`/`import`.
 
@@ -263,6 +265,36 @@ short-circuits the keyword lane to the literal pre-BM25 pipeline — its purpose
 to produce the same-session BM25-disabled baseline for non-regression evaluation
 (see the eval protocol in `docs/evals/bm25-results.md`), not to let end users opt
 out of keyword recall.
+
+### Lazy expansion gating (agentic-73l6)
+
+`recall`/`search` skip single-hop **graph expansion** (the edge-walk that pulls
+in connected neighbours) when the vector top-K is already confident — saving
+two SQL round-trips per gated query with zero measured recall change (see
+[`docs/evals/lazy-gating-results.md`](docs/evals/lazy-gating-results.md)). The
+gate fires when the top-1 raw cosine similarity strictly exceeds
+`expand_threshold` (shipped active at `0.75` — 22% of eval queries gate on the
+reference brain), or when the full top-K similarity spread is strictly below
+`expand_spread_threshold` (shipped **off** at `0.0`: on the reference brain the
+spread anti-correlates with confidence). Setting both keys to `0.0` disables
+the gate entirely — the pipeline is then byte-identical to the pre-gate
+pipeline. The BM25 keyword lane and the optional reranker run unchanged on
+every query, gated or not. See
+[ADR-014](docs/adrs/ADR-014-lazy-expansion-gating.md).
+
+**Skip metric.** Each gate fire increments the persistent counter
+`stats.expansion_skips` in the brain's `schema_meta` table (best-effort — a
+counter write can never fail or slow a recall). It counts skip events per
+expansion site and never resets, so read deltas:
+
+```bash
+sqlite3 ~/.cerebro/projects/<hash>.sqlite \
+  "SELECT value FROM schema_meta WHERE key='stats.expansion_skips'"
+```
+
+`SearchWithGlobal` (project + global stores) gates each store independently on
+its own result set, and both skip events are recorded on the **project**
+brain's counter.
 
 ## Go library usage
 

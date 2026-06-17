@@ -374,6 +374,96 @@ func TestConfigValidation_RerankFusion(t *testing.T) {
 	}
 }
 
+// --- agentic-73l6: lazy expansion gate config keys ---
+
+// AC1a/AC1b: both gate keys are registered with a documented description, a
+// float default and the shared unit-float validator; both appear in the
+// hand-maintained configRegistryKeys() slice (M3 — `config list` omission).
+// Defaults pin the Design §5 shipped values: T1 ACTIVE at 0.8, T2 OFF at 0.0.
+// These strings must agree with brain.defaultExpandThreshold /
+// brain.defaultExpandSpreadThreshold (TL Minor 4 four-surface consistency).
+func TestConfigRegistry_ExpandGateKeys(t *testing.T) {
+	cases := []struct {
+		key         string
+		wantDefault string
+	}{
+		{"expand_threshold", "0.75"}, // §5 selection rule on the live sweep — see docs/evals/lazy-gating-results.md
+		{"expand_spread_threshold", "0.0"},
+	}
+	registryKeys := configRegistryKeys()
+	for _, tc := range cases {
+		p, ok := configRegistry[tc.key]
+		if !ok {
+			t.Errorf("expected key %q in configRegistry (AC1)", tc.key)
+			continue
+		}
+		if p.Default != tc.wantDefault {
+			t.Errorf("%s default = %q, want %q", tc.key, p.Default, tc.wantDefault)
+		}
+		if p.Description == "" {
+			t.Errorf("%s has no description (AC1)", tc.key)
+		}
+		if p.Validate == nil {
+			t.Errorf("%s has a nil Validate function (AC1)", tc.key)
+		}
+		found := false
+		for _, k := range registryKeys {
+			if k == tc.key {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s missing from configRegistryKeys() — `config list` would omit it (M3)", tc.key)
+		}
+	}
+}
+
+// AC1c: out-of-range values are rejected for both keys — including NaN (S-1).
+func TestConfigValidation_ExpandGateKeys(t *testing.T) {
+	for _, key := range []string{"expand_threshold", "expand_spread_threshold"} {
+		p := configRegistry[key]
+		for _, v := range []string{"0", "0.0", "0.5", "0.8", "1", "1.0"} {
+			if err := p.Validate(v); err != nil {
+				t.Errorf("%s: Validate(%q) unexpected error: %v", key, v, err)
+			}
+		}
+		// AC1c rejection table: out-of-range both directions, garbage, and the
+		// S-1 NaN case.
+		for _, v := range []string{"1.5", "-0.1", "2", "-1", "abc", "", "NaN", "nan", "+Inf", "-Inf"} {
+			if err := p.Validate(v); err == nil {
+				t.Errorf("%s: Validate(%q) expected error, got nil (AC1c)", key, v)
+			}
+		}
+	}
+}
+
+// S-1 (agentic-73l6): validateUnitFloat must reject NaN. strconv.ParseFloat
+// recognizes "NaN" (case-insensitive), and IEEE-754 NaN compares false to
+// everything, so the pre-fix `f < 0 || f > 1` range check never fired on NaN
+// — `cerebro config set <unit-float-key> NaN` was silently ACCEPTED. The fix
+// (math.IsNaN) hardens the shared validator for all unit-float keys:
+// gc_threshold, search_threshold, recall_threshold, expand_threshold,
+// expand_spread_threshold.
+func TestValidateUnitFloat_RejectsNaN(t *testing.T) {
+	for _, v := range []string{"NaN", "nan", "-NaN"} {
+		if err := validateUnitFloat(v); err == nil {
+			t.Errorf("validateUnitFloat(%q) expected error, got nil (S-1 NaN hole)", v)
+		}
+	}
+	// ±Inf and overflow were already rejected — pin that this stays true.
+	for _, v := range []string{"+Inf", "-Inf", "Infinity", "1e400"} {
+		if err := validateUnitFloat(v); err == nil {
+			t.Errorf("validateUnitFloat(%q) expected error, got nil", v)
+		}
+	}
+	// In-range values still accepted.
+	for _, v := range []string{"0", "0.5", "1", "0.80"} {
+		if err := validateUnitFloat(v); err != nil {
+			t.Errorf("validateUnitFloat(%q) unexpected error: %v", v, err)
+		}
+	}
+}
+
 // M2: validateBool accepts true/false and rejects anything else.
 func TestValidateBool(t *testing.T) {
 	for _, v := range []string{"true", "false"} {

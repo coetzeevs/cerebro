@@ -213,6 +213,22 @@ func (s *Store) DeleteMeta(key string) error {
 	return err
 }
 
+// IncrMeta atomically increments an integer-valued schema_meta key (UPSERT —
+// no read-modify-write race). A missing key starts at 1. A non-integer
+// existing value resets via CAST (SQLite CAST of non-numeric text → 0, then
+// +1 = 1) — documented semantics, accepted for observability counters such as
+// the lazy-expansion skip metric stats.expansion_skips (agentic-73l6 AC4/R5);
+// do not use IncrMeta for ledger data. The key is always a compile-time Go
+// constant at call sites; it is parameterized here regardless.
+func (s *Store) IncrMeta(key string) error {
+	_, err := s.db.Exec(
+		`INSERT INTO schema_meta (key, value) VALUES (?, '1')
+		 ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`,
+		key,
+	)
+	return err
+}
+
 // migrateSchema applies incremental schema migrations to an existing database.
 // It is called from Open() so that existing databases are upgraded on first access.
 // Each migration is guarded by a version check and wrapped in a transaction to

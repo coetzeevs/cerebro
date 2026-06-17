@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 
 	"github.com/coetzeevs/cerebro/internal/store"
@@ -72,6 +73,18 @@ var configRegistry = map[string]configParam{
 		Default:     "true",
 		Validate:    validateBool,
 	},
+	"expand_threshold": {
+		Key:         "expand_threshold",
+		Description: "Skip graph expansion when the top-1 vector cosine similarity strictly exceeds this value (agentic-73l6). 0.0 disables the condition.",
+		Default:     "0.75",
+		Validate:    validateUnitFloat,
+	},
+	"expand_spread_threshold": {
+		Key:         "expand_spread_threshold",
+		Description: "Skip graph expansion when the full top-K similarity spread (top-1 minus top-K) is strictly below this value (agentic-73l6). 0.0 (default) disables the condition — on the current brain the spread anti-correlates with confidence, so it ships OFF.",
+		Default:     "0.0",
+		Validate:    validateUnitFloat,
+	},
 }
 
 // configMetaPrefix is prepended to config keys when storing in schema_meta.
@@ -95,7 +108,9 @@ func validateUnitFloat(s string) error {
 	if err != nil {
 		return fmt.Errorf("must be a number between 0 and 1, got %q", s)
 	}
-	if f < 0 || f > 1 {
+	// S-1 (agentic-73l6): ParseFloat accepts "NaN" (case-insensitive), and NaN
+	// compares false to everything, so `f < 0 || f > 1` alone never rejects it.
+	if math.IsNaN(f) || f < 0 || f > 1 {
 		return fmt.Errorf("must be between 0 and 1, got %s", s)
 	}
 	return nil
@@ -414,6 +429,8 @@ func configRegistryKeys() []string {
 		"rerank_command",
 		"rerank_fusion",
 		"bm25_enabled",
+		"expand_threshold",
+		"expand_spread_threshold",
 	}
 }
 

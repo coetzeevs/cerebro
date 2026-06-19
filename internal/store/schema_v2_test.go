@@ -19,8 +19,8 @@ func TestSchemaVersionIsCurrent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "3" {
-		t.Fatalf("expected schema_version=3, got %q", ver)
+	if ver != "4" {
+		t.Fatalf("expected schema_version=4, got %q", ver)
 	}
 }
 
@@ -50,8 +50,8 @@ func TestMigrationFromV1(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta after migration: %v", err)
 	}
-	if ver != "3" {
-		t.Fatalf("expected schema_version=3 after migration, got %q", ver)
+	if ver != "4" {
+		t.Fatalf("expected schema_version=4 after migration, got %q", ver)
 	}
 
 	// Verify the columns exist and are queryable.
@@ -145,8 +145,8 @@ func TestMigrationIdempotency(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "3" {
-		t.Fatalf("expected schema_version=3, got %q", ver)
+	if ver != "4" {
+		t.Fatalf("expected schema_version=4, got %q", ver)
 	}
 }
 

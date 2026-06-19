@@ -163,9 +163,9 @@ func TestGetAllMeta(t *testing.T) {
 	if meta["key2"] != "val2" {
 		t.Errorf("expected key2=val2, got %q", meta["key2"])
 	}
-	// schema_version is set by Init (3 after the nodes_fts bump, agentic-2lak)
-	if meta["schema_version"] != "3" {
-		t.Errorf("expected schema_version=3, got %q", meta["schema_version"])
+	// schema_version is set by Init (4 after the xtzn validity-window bump, agentic-xtzn)
+	if meta["schema_version"] != "4" {
+		t.Errorf("expected schema_version=4, got %q", meta["schema_version"])
 	}
 }
 

@@ -435,8 +435,9 @@ func runEval(cmd *cobra.Command, _ []string) error {
 			continue
 		}
 
-		// subtypeFilter=nil: measure the whole pipeline, no subtype filtering.
-		hits, searchErr := b.Search(context.Background(), q.Query, evalLimitFlag, evalThresholdFlag, nil)
+		// subtypeFilter=nil, asOf=nil: measure the whole pipeline, no subtype
+		// filtering and no bi-temporal edge filter (byte-identical to baseline).
+		hits, searchErr := b.Search(context.Background(), q.Query, evalLimitFlag, evalThresholdFlag, nil, nil)
 		if searchErr != nil {
 			// R1: Ollama may be unavailable. Surface the error and bail — do NOT fabricate zeros.
 			return fmt.Errorf("Brain.Search for query %q: %w (NOTE: Ollama must be running locally — e.g. 'ollama serve')", q.ID, searchErr)

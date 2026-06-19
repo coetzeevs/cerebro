@@ -324,7 +324,7 @@ func TestExpandGraphFindsNeighbors(t *testing.T) {
 	}
 
 	// A→B edge
-	if _, err := s.AddEdge(idA, idB, "relates_to"); err != nil {
+	if _, err := s.AddEdge(idA, idB, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
@@ -333,7 +333,7 @@ func TestExpandGraphFindsNeighbors(t *testing.T) {
 		{Node: Node{ID: idA, Type: TypeConcept, Content: "concept A", Importance: 0.8, DecayRate: 0.02}, Score: 0.6, Similarity: 0.9},
 	}
 
-	expanded, err := s.ExpandGraph(initial, 10)
+	expanded, err := s.ExpandGraph(initial, 10, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestExpandGraphBoostsConnected(t *testing.T) {
 		t.Fatalf("AddNode B: %v", err)
 	}
 
-	if _, err := s.AddEdge(idA, idB, "relates_to"); err != nil {
+	if _, err := s.AddEdge(idA, idB, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
@@ -387,7 +387,7 @@ func TestExpandGraphBoostsConnected(t *testing.T) {
 		{Node: *nodeB, Score: scoreB, Similarity: 0.8},
 	}
 
-	expanded, err := s.ExpandGraph(initial, 10)
+	expanded, err := s.ExpandGraph(initial, 10, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestExpandGraphCapsAtLimit(t *testing.T) {
 		if err != nil {
 			t.Fatalf("AddNode %s: %v", name, err)
 		}
-		if _, err := s.AddEdge(idA, id, "relates_to"); err != nil {
+		if _, err := s.AddEdge(idA, id, "relates_to", AddEdgeOpts{}); err != nil {
 			t.Fatalf("AddEdge A→%s: %v", name, err)
 		}
 	}
@@ -426,7 +426,7 @@ func TestExpandGraphCapsAtLimit(t *testing.T) {
 	}
 
 	// Limit to 2 — should return at most 2
-	expanded, err := s.ExpandGraph(initial, 2)
+	expanded, err := s.ExpandGraph(initial, 2, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestExpandGraphNoEdges(t *testing.T) {
 		{Node: Node{ID: idA, Type: TypeConcept, Content: "isolated", Importance: 0.8, DecayRate: 0.02}, Score: 0.6, Similarity: 0.9},
 	}
 
-	expanded, err := s.ExpandGraph(initial, 10)
+	expanded, err := s.ExpandGraph(initial, 10, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}

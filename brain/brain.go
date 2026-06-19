@@ -236,9 +236,13 @@ func (b *Brain) Reinforce(id string) error {
 	return b.store.ReinforceNode(id)
 }
 
-// AddEdge creates a relationship between two nodes.
-func (b *Brain) AddEdge(sourceID, targetID, relation string) (int64, error) {
-	return b.store.AddEdge(sourceID, targetID, relation)
+// AddEdge creates a relationship between two nodes, carrying the optional
+// bi-temporal validity window (agentic-xtzn). Re-adding an existing
+// (source, target, relation) edge re-asserts the full window in place via the
+// store-layer upsert and returns the persisted id. Pass a zero AddEdgeOpts for
+// an open-ended (NULL/NULL) edge — the pre-xtzn default.
+func (b *Brain) AddEdge(sourceID, targetID, relation string, opts store.AddEdgeOpts) (int64, error) { //nolint:gocritic // hugeParam: value-struct opts, OO-011 precedent (cb41ad95)
+	return b.store.AddEdge(sourceID, targetID, relation, opts)
 }
 
 // MarkConsolidated marks episodes as consolidated.
@@ -251,9 +255,11 @@ func (b *Brain) ResolveID(prefix string) (string, error) {
 	return b.store.ResolvePrefix(prefix)
 }
 
-// Get retrieves a node with its edges.
-func (b *Brain) Get(id string) (*store.NodeWithEdges, error) {
-	return b.store.GetNodeWithEdges(id)
+// Get retrieves a node with its edges. When asOf is non-nil, only edges valid
+// at that instant are returned (agentic-xtzn); nil returns all edges
+// (pre-xtzn behaviour).
+func (b *Brain) Get(id string, asOf *time.Time) (*store.NodeWithEdges, error) {
+	return b.store.GetNodeWithEdges(id, asOf)
 }
 
 // List returns nodes matching the given filters.
@@ -280,7 +286,14 @@ func (b *Brain) GC(threshold float64, dryRun bool) (*store.GCResult, error) {
 // Note: the filter may shrink the result count below `limit`; the caller's
 // `--limit` is a ceiling, not a guarantee (threshold can already shrink results).
 // Pass nil for subtypeFilter to get pre-OO-011 behaviour (no subtype filter).
-func (b *Brain) Search(ctx context.Context, query string, limit int, threshold float64, subtypeFilter *string) ([]store.ScoredNode, error) {
+//
+// asOf, when non-nil, threads a bi-temporal as-of instant into graph expansion
+// (agentic-xtzn): ExpandGraph then traverses only edges valid at that instant.
+// Pass nil for asOf to get pre-xtzn behaviour (no validity filter; the edge
+// predicate is omitted entirely). NOTE: when the lazy-expansion gate fires
+// (agentic-73l6), ExpandGraph is skipped and asOf has no effect on that query —
+// no edges are traversed, so there is nothing to filter (TL-PI-N2).
+func (b *Brain) Search(ctx context.Context, query string, limit int, threshold float64, subtypeFilter *string, asOf *time.Time) ([]store.ScoredNode, error) {
 	if b.embedder.Dimensions() == 0 {
 		return nil, fmt.Errorf("no embedding provider configured — search requires embeddings")
 	}
@@ -294,7 +307,7 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 	// exact pre-rerank path: VectorSearch(limit) → ExpandGraph(limit) → filter,
 	// so eval metrics are byte-identical to the baseline by construction (AC2b).
 	if resolveRerankEnabled(b.store) {
-		return b.searchReranked(ctx, query, vec, limit, threshold, subtypeFilter)
+		return b.searchReranked(ctx, query, vec, limit, threshold, subtypeFilter, asOf)
 	}
 
 	results, err := b.store.VectorSearch(vec, limit, threshold)
@@ -310,7 +323,7 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 		noteExpansionSkipped(b.store)
 		expanded = cutByScore(results, limit)
 	} else {
-		expanded, err = b.store.ExpandGraph(results, limit)
+		expanded, err = b.store.ExpandGraph(results, limit, asOf)
 		if err != nil {
 			return nil, err
 		}
@@ -339,7 +352,7 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 // each node — fusion governs ordering only. On any reranker failure
 // applyRerankWithFusion degrades to the composite order, so the AC4-NR
 // non-regression floor holds.
-func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32, limit int, threshold float64, subtypeFilter *string) ([]store.ScoredNode, error) {
+func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32, limit int, threshold float64, subtypeFilter *string, asOf *time.Time) ([]store.ScoredNode, error) {
 	over := limit
 	if rerankOverRetrieve > over {
 		over = rerankOverRetrieve
@@ -357,7 +370,7 @@ func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32,
 		noteExpansionSkipped(b.store)
 		expanded = cutByScore(results, over)
 	} else {
-		expanded, err = b.store.ExpandGraph(results, over)
+		expanded, err = b.store.ExpandGraph(results, over, asOf)
 		if err != nil {
 			return nil, err
 		}
@@ -379,7 +392,12 @@ func (b *Brain) searchReranked(ctx context.Context, query string, vec []float32,
 // subtypeFilter, when non-nil, is applied post-merge (after ExpandGraph on both
 // stores) so that every returned node is guaranteed to match the subtype.
 // Pass nil for subtypeFilter to get pre-OO-011 behaviour (no subtype filter).
-func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, threshold float64, global *Brain, subtypeFilter *string) ([]store.ScoredNode, error) {
+//
+// asOf threads a bi-temporal as-of instant into BOTH stores' graph expansion
+// (agentic-xtzn); nil omits the validity predicate (pre-xtzn behaviour). As in
+// Search, a fired lazy-expansion gate makes asOf a no-op for that store's query
+// (TL-PI-N2).
+func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, threshold float64, global *Brain, subtypeFilter *string, asOf *time.Time) ([]store.ScoredNode, error) {
 	if b.embedder.Dimensions() == 0 {
 		return nil, fmt.Errorf("no embedding provider configured — search requires embeddings")
 	}
@@ -418,7 +436,7 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		noteExpansionSkipped(b.store)
 		projectResults = cutByScore(projectResults, perStore)
 	} else {
-		projectResults, err = b.store.ExpandGraph(projectResults, perStore)
+		projectResults, err = b.store.ExpandGraph(projectResults, perStore, asOf)
 		if err != nil {
 			return nil, fmt.Errorf("project graph expansion: %w", err)
 		}
@@ -433,7 +451,7 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 		noteExpansionSkipped(b.store) // project brain's counter — see above
 		globalResults = cutByScore(globalResults, perStore)
 	} else {
-		globalResults, err = global.store.ExpandGraph(globalResults, perStore)
+		globalResults, err = global.store.ExpandGraph(globalResults, perStore, asOf)
 		if err != nil {
 			return nil, fmt.Errorf("global graph expansion: %w", err)
 		}

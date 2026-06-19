@@ -82,7 +82,7 @@ func TestBrainSearch_BM25SurfacesExactIdentifier(t *testing.T) {
 	}
 
 	// BM25 is on by default — Search must surface the identifier node.
-	res, err := b.Search(context.Background(), "HS-049", 5, 0.0, nil)
+	res, err := b.Search(context.Background(), "HS-049", 5, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestBrainSearch_BM25DisabledIsIdentity(t *testing.T) {
 	}
 
 	const limit = 5
-	got, err := b.Search(context.Background(), "HS-049", limit, 0.0, nil)
+	got, err := b.Search(context.Background(), "HS-049", limit, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -113,7 +113,7 @@ func TestBrainSearch_BM25DisabledIsIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VectorSearch: %v", err)
 	}
-	expanded, err := b.store.ExpandGraph(results, limit)
+	expanded, err := b.store.ExpandGraph(results, limit, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}

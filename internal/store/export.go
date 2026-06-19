@@ -76,7 +76,7 @@ func (s *Store) Export() (*ExportBundle, error) {
 
 // ListAllEdges returns every edge in the store.
 func (s *Store) ListAllEdges() ([]Edge, error) {
-	rows, err := s.db.Query(`SELECT id, source_id, target_id, relation, weight, metadata, created_at FROM edges ORDER BY created_at`)
+	rows, err := s.db.Query(`SELECT id, source_id, target_id, relation, weight, metadata, created_at, valid_at, invalid_at FROM edges ORDER BY created_at`)
 	if err != nil {
 		return nil, fmt.Errorf("listing edges: %w", err)
 	}
@@ -211,15 +211,18 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 		}
 	}
 
-	// Import edges
-	edgeStmt, err := tx.Prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, relation, weight, metadata) VALUES (?, ?, ?, ?, ?)`)
+	// Import edges. valid_at/invalid_at are carried through so a bundle exported
+	// with bi-temporal windows round-trips them (agentic-xtzn): ListAllEdges now
+	// emits the two columns, so the import must persist them to stay symmetric.
+	edgeStmt, err := tx.Prepare(`INSERT OR IGNORE INTO edges (source_id, target_id, relation, weight, metadata, valid_at, invalid_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return nil, fmt.Errorf("preparing edge insert: %w", err)
 	}
 	defer edgeStmt.Close() //nolint:errcheck // best-effort cleanup
 
-	for _, e := range bundle.Edges {
-		res, err := edgeStmt.Exec(e.SourceID, e.TargetID, e.Relation, e.Weight, nullJSON(e.Metadata))
+	for i := range bundle.Edges {
+		e := &bundle.Edges[i]
+		res, err := edgeStmt.Exec(e.SourceID, e.TargetID, e.Relation, e.Weight, nullJSON(e.Metadata), formatBound(e.ValidAt), formatBound(e.InvalidAt))
 		if err != nil {
 			return nil, fmt.Errorf("importing edge %s->%s: %w", e.SourceID, e.TargetID, err)
 		}
@@ -318,7 +321,8 @@ func (s *Store) ExportSQL(w io.Writer) error {
 	}
 
 	// Edges
-	for _, e := range bundle.Edges {
+	for i := range bundle.Edges {
+		e := &bundle.Edges[i]
 		metadata := "NULL"
 		if len(e.Metadata) > 0 {
 			metadata = fmt.Sprintf("'%s'", sqlEscape(string(e.Metadata)))

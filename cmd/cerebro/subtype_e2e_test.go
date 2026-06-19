@@ -65,7 +65,7 @@ func TestCLI_SubtypeFlow(t *testing.T) {
 	if err := b.Update(id, brain.WithUpdatedSubtype("operator-safety")); err != nil {
 		t.Fatalf("Update (set operator-safety): %v", err)
 	}
-	nwe, err := b.Get(id)
+	nwe, err := b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get after update: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestCLI_SubtypeFlow(t *testing.T) {
 	if err := b.Update(id, brain.WithUpdatedSubtype("")); err != nil {
 		t.Fatalf("Update (clear): %v", err)
 	}
-	nwe, err = b.Get(id)
+	nwe, err = b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get after clear: %v", err)
 	}

@@ -17,6 +17,7 @@ var recallThresholdFlag float64
 var recallPrimeFlag bool
 var recallGlobalFlag bool
 var recallSubtypeFlag string
+var recallAsOfFlag string
 
 func init() {
 	cmd := &cobra.Command{
@@ -41,6 +42,13 @@ Use --subtype "" to return only nodes with no subtype (NULL).
 Non-empty value performs exact match.
 NOTE: --subtype is ignored in --prime mode (prime uses stratified/MMR selection).
 NOTE: --subtype "" on recall *filters* for NULL-subtype nodes. On update, --subtype "" *clears* the subtype.`)
+	cmd.Flags().StringVar(&recallAsOfFlag, "as-of", "",
+		`Traverse only edges valid at this instant during graph expansion (agentic-xtzn).
+RFC3339 (2026-06-17T14:30:00Z) or date (2026-06-17, midnight UTC); UTC-normalized.
+Half-open window [valid_at, invalid_at); NULL bounds are open-ended.
+Independent of --subtype (both may be supplied).
+NOTE: --as-of is a no-op when the lazy-expansion gate skips expansion for the query
+(no edges are traversed, so there is nothing to filter), and is ignored in --prime mode.`)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -83,6 +91,17 @@ func runRecall(cmd *cobra.Command, args []string) error {
 		subtypeFilter = &recallSubtypeFlag
 	}
 
+	// --as-of: nil when the flag is absent (pre-xtzn behaviour — edge predicate
+	// omitted). Parsed before the brain call so a malformed value fails fast.
+	var asOf *time.Time
+	if cmd.Flags().Changed("as-of") {
+		t, parseErr := parseAsOf(recallAsOfFlag)
+		if parseErr != nil {
+			return fmt.Errorf("--as-of: %w", parseErr)
+		}
+		asOf = &t
+	}
+
 	var results []store.ScoredNode
 	if recallGlobalFlag {
 		global, globalErr := brain.Open(brain.GlobalPath())
@@ -90,9 +109,9 @@ func runRecall(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("global store not initialized — run 'cerebro init --global' first: %w", globalErr)
 		}
 		defer func() { _ = global.Close() }()
-		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global, subtypeFilter)
+		results, err = b.SearchWithGlobal(context.Background(), query, recallLimitFlag, recallThresholdFlag, global, subtypeFilter, asOf)
 	} else {
-		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag, subtypeFilter)
+		results, err = b.Search(context.Background(), query, recallLimitFlag, recallThresholdFlag, subtypeFilter, asOf)
 	}
 	if err != nil {
 		return err

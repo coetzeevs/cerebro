@@ -175,7 +175,7 @@ func TestSupersedeNode(t *testing.T) {
 	}
 
 	// Edge should exist
-	nwe, _ := s.GetNodeWithEdges(newID)
+	nwe, _ := s.GetNodeWithEdges(newID, nil)
 	if len(nwe.Edges) != 1 {
 		t.Fatalf("expected 1 edge, got %d", len(nwe.Edges))
 	}
@@ -266,7 +266,7 @@ func TestStats(t *testing.T) {
 	if _, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "c1", Importance: 0.5}); err != nil {
 		t.Fatalf("AddNode: %v", err)
 	}
-	if _, err := s.AddEdge("a", "b", "relates_to"); err != nil {
+	if _, err := s.AddEdge("a", "b", "relates_to", AddEdgeOpts{}); err != nil {
 		// Expected: edges with nonexistent nodes won't be added due to FK
 		_ = err
 	}
@@ -406,7 +406,7 @@ func TestAddEdge(t *testing.T) {
 	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n1", Importance: 0.5})
 	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
 
-	edgeID, err := s.AddEdge(id1, id2, "relates_to")
+	edgeID, err := s.AddEdge(id1, id2, "relates_to", AddEdgeOpts{})
 	if err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
@@ -415,13 +415,13 @@ func TestAddEdge(t *testing.T) {
 	}
 
 	// Duplicate should not error (ON CONFLICT DO NOTHING)
-	_, err = s.AddEdge(id1, id2, "relates_to")
+	_, err = s.AddEdge(id1, id2, "relates_to", AddEdgeOpts{})
 	if err != nil {
 		t.Fatalf("AddEdge duplicate: %v", err)
 	}
 
 	// Different relation should create new edge
-	edgeID2, err := s.AddEdge(id1, id2, "supports")
+	edgeID2, err := s.AddEdge(id1, id2, "supports", AddEdgeOpts{})
 	if err != nil {
 		t.Fatalf("AddEdge different relation: %v", err)
 	}
@@ -437,14 +437,14 @@ func TestGetNodeWithEdges(t *testing.T) {
 	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
 	id3, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n3", Importance: 0.5})
 
-	if _, err := s.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := s.AddEdge(id1, id2, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
-	if _, err := s.AddEdge(id3, id1, "supports"); err != nil {
+	if _, err := s.AddEdge(id3, id1, "supports", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
-	nwe, err := s.GetNodeWithEdges(id1)
+	nwe, err := s.GetNodeWithEdges(id1, nil)
 	if err != nil {
 		t.Fatalf("GetNodeWithEdges: %v", err)
 	}
@@ -541,7 +541,7 @@ func TestStatsWithEdges(t *testing.T) {
 
 	id1, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n1", Importance: 0.5})
 	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
-	if _, err := s.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := s.AddEdge(id1, id2, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 

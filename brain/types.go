@@ -12,6 +12,7 @@ type (
 	NodeWithEdges = store.NodeWithEdges
 	NodeType      = store.NodeType
 	ListNodesOpts = store.ListNodesOpts
+	AddEdgeOpts   = store.AddEdgeOpts
 	Stats         = store.Stats
 	GCResult      = store.GCResult
 

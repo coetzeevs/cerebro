@@ -163,6 +163,7 @@ func (b *Brain) Add(content string, nodeType store.NodeType, opts ...AddOption) 
 		Metadata:       o.Metadata,
 		Importance:     o.Importance,
 		EmbeddingModel: b.embedder.Model(),
+		ProvenanceRoot: o.ProvenanceRoot,
 	})
 	if err != nil {
 		return "", err
@@ -248,6 +249,32 @@ func (b *Brain) AddEdge(sourceID, targetID, relation string, opts store.AddEdgeO
 // MarkConsolidated marks episodes as consolidated.
 func (b *Brain) MarkConsolidated(ids []string) error {
 	return b.store.MarkConsolidated(ids)
+}
+
+// Consolidate flips each source episode to consolidated AND auto-writes a
+// derived_from edge from the into-node to each source, in a single atomic
+// transaction (agentic-lbjg AC3). Fail-closed: the into-node and every source
+// must resolve as an episode, else a non-zero error with zero partial write.
+// Idempotent (UNIQUE(source,target,relation) upsert). This is additive — the
+// existing status-only MarkConsolidated is unchanged.
+func (b *Brain) Consolidate(intoID string, episodeIDs []string) error {
+	return b.store.ConsolidateInto(intoID, episodeIDs)
+}
+
+// WalkProvenance returns the derived_from lineage chain walked outward from id up
+// to depth hops (agentic-lbjg AC5): WalkRelation(id, derived_from, depth,
+// outgoing=true). The start node is first at depth 0; every reachable source
+// appears exactly once at its minimum BFS depth; cycles terminate on the visited
+// set. depth<=0 returns just the start node.
+func (b *Brain) WalkProvenance(id string, depth int) ([]store.NodeWithDepth, error) {
+	return b.store.WalkRelation(id, store.RelationDerivedFrom, depth, true)
+}
+
+// ProvenanceStatus returns id -> provenance_status (complete|none|legacy) for the
+// given node IDs, computed at query time in one batched pass (no N+1) —
+// agentic-lbjg AC6.
+func (b *Brain) ProvenanceStatus(ids []string) (map[string]string, error) {
+	return b.store.ProvenanceStatusBatch(ids)
 }
 
 // ResolveID resolves a full UUID or short prefix to a full node ID.
@@ -663,9 +690,10 @@ func WithPromoteContent(c string) PromoteOption {
 // Option types
 
 type addOptions struct {
-	Subtype    string
-	Metadata   json.RawMessage
-	Importance float64
+	Subtype        string
+	Metadata       json.RawMessage
+	Importance     float64
+	ProvenanceRoot bool
 }
 
 func addDefaults() addOptions {
@@ -679,6 +707,13 @@ func WithSubtype(s string) AddOption     { return func(o *addOptions) { o.Subtyp
 func WithImportance(i float64) AddOption { return func(o *addOptions) { o.Importance = i } }
 func WithMetadata(m json.RawMessage) AddOption {
 	return func(o *addOptions) { o.Metadata = m }
+}
+
+// WithProvenanceRoot marks the new node as a first-class provenance source
+// (nodes.provenance_root=1) — agentic-lbjg. Additive: a flagless Add still
+// defaults provenance_root to 0, so existing callers are unaffected.
+func WithProvenanceRoot() AddOption {
+	return func(o *addOptions) { o.ProvenanceRoot = true }
 }
 
 type updateOptions struct {

@@ -10,6 +10,7 @@ type (
 	Edge          = store.Edge
 	ScoredNode    = store.ScoredNode
 	NodeWithEdges = store.NodeWithEdges
+	NodeWithDepth = store.NodeWithDepth
 	NodeType      = store.NodeType
 	ListNodesOpts = store.ListNodesOpts
 	AddEdgeOpts   = store.AddEdgeOpts
@@ -39,3 +40,7 @@ const (
 
 // Re-exported export format version.
 const ExportVersion = store.ExportVersion
+
+// RelationDerivedFrom is the reserved built-in provenance edge relation
+// (agentic-lbjg), re-exported for external consumers and the CLI.
+const RelationDerivedFrom = store.RelationDerivedFrom

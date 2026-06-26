@@ -53,6 +53,15 @@ type Node struct {
 }
 
 // Edge represents a directed relationship between two nodes.
+//
+// ValidAt/InvalidAt carry the bi-temporal valid-time window (agentic-xtzn): the
+// half-open interval [ValidAt, InvalidAt) during which the asserted relationship
+// holds in the world. Both are nullable (*time.Time):
+//   - ValidAt   == nil  => valid from -inf (no lower bound).
+//   - InvalidAt == nil  => still valid / open-ended (no upper bound).
+//
+// This is the valid-time axis, orthogonal to CreatedAt (transaction time, when
+// the row was written). See ADR-015.
 type Edge struct {
 	ID        int64           `json:"id"`
 	SourceID  string          `json:"source_id"`
@@ -61,6 +70,19 @@ type Edge struct {
 	Weight    float64         `json:"weight"`
 	Metadata  json.RawMessage `json:"metadata,omitempty"`
 	CreatedAt time.Time       `json:"created_at"`
+	ValidAt   *time.Time      `json:"valid_at,omitempty"`
+	InvalidAt *time.Time      `json:"invalid_at,omitempty"`
+}
+
+// AddEdgeOpts carries the optional bi-temporal validity bounds for AddEdge
+// (agentic-xtzn). A nil pointer means the corresponding bound is SQL NULL
+// (open-ended). The agent writes these bounds explicitly; cerebro never infers
+// them (no auto-invalidation, no LLM in the loop). On a re-add of an existing
+// (source, target, relation) edge, AddEdge re-asserts the FULL window: a nil
+// bound OVERWRITES any prior non-NULL value to NULL — it is not a partial patch.
+type AddEdgeOpts struct {
+	ValidAt   *time.Time // nil => NULL (valid from -inf)
+	InvalidAt *time.Time // nil => NULL (still valid / open-ended)
 }
 
 // ScoredNode is a node with a computed retrieval score.

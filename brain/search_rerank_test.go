@@ -74,7 +74,7 @@ func TestSearchReranked_OverRetrievesAndCuts(t *testing.T) {
 	// over-retrieve width is still applied, which is what AC3a checks).
 	_ = b.store.SetMeta("config.rerank_enabled", "true")
 
-	results, err := b.Search(context.Background(), "query", 10, 0.0, nil)
+	results, err := b.Search(context.Background(), "query", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestSearchReranked_RerankerReceivesOverRetrievedSet(t *testing.T) {
 	newReranker = func(*store.Store) rerank.Reranker { return countingReranker{got: &gotCount} }
 	t.Cleanup(func() { newReranker = orig })
 
-	results, err := b.Search(context.Background(), "query", 10, 0.0, nil)
+	results, err := b.Search(context.Background(), "query", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -163,12 +163,12 @@ func TestSearchDisabled_ByteIdenticalToPreRerank(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VectorSearch: %v", err)
 	}
-	wantExpanded, err := b.store.ExpandGraph(wantResults, 10)
+	wantExpanded, err := b.store.ExpandGraph(wantResults, 10, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}
 
-	got, err := b.Search(context.Background(), "query", 10, 0.0, nil)
+	got, err := b.Search(context.Background(), "query", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestSearchDisabled_DoesNotInvokeReranker(t *testing.T) {
 	// Command set but gate OFF — must be ignored entirely.
 	_ = b.store.SetMeta("config.rerank_command", "/nonexistent/reranker-binary-should-never-run")
 
-	results, err := b.Search(context.Background(), "query", 10, 0.0, nil)
+	results, err := b.Search(context.Background(), "query", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search must not error when rerank disabled: %v", err)
 	}

@@ -200,6 +200,37 @@ func resolveID(b *brain.Brain, prefix string) (string, error) {
 	return b.ResolveID(prefix)
 }
 
+// parseAsOf parses an agent/operator-supplied time string for the --as-of /
+// --valid-at / --invalid-at flags (agentic-xtzn). It accepts two layouts:
+//
+//   - RFC3339 (e.g. "2026-06-17T14:30:00Z" or with an offset) — the primary,
+//     machine-readable form cerebro already emits elsewhere; AND
+//   - date-only "2006-01-02" (e.g. "2026-06-17"), interpreted as midnight UTC
+//     for ergonomics.
+//
+// The result is ALWAYS normalized to UTC (matching the nodes.go storage idiom),
+// so callers can hand it straight to the store layer. parseAsOf returns an error
+// — and NEVER panics — for empty, whitespace, garbage, partial, or out-of-range
+// input (Security guardrail): a malformed flag must surface as a CLI error
+// before any store write or query, never reach the DB unparsed.
+func parseAsOf(s string) (time.Time, error) {
+	trimmed := strings.TrimSpace(s)
+	if trimmed == "" {
+		return time.Time{}, fmt.Errorf("empty time value: provide an RFC3339 timestamp (2006-01-02T15:04:05Z) or a date (2006-01-02)")
+	}
+	// RFC3339 first (the primary form); time.Parse validates ranges and returns
+	// an error for out-of-range or malformed input — no panic.
+	if t, err := time.Parse(time.RFC3339, trimmed); err == nil {
+		return t.UTC(), nil
+	}
+	// Date-only fallback: midnight UTC.
+	if t, err := time.Parse("2006-01-02", trimmed); err == nil {
+		return t.UTC(), nil
+	}
+	return time.Time{}, fmt.Errorf(
+		"invalid time %q: expected RFC3339 (2006-01-02T15:04:05Z) or date (2006-01-02)", s)
+}
+
 // parseNodeType validates and returns a NodeType.
 func parseNodeType(s string) (store.NodeType, error) {
 	s = strings.ToLower(s)

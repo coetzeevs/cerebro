@@ -99,7 +99,7 @@ func TestAddAndGet(t *testing.T) {
 		t.Fatal("expected non-empty ID")
 	}
 
-	nwe, err := b.Get(id)
+	nwe, err := b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestAddWithSubtype(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	nwe, _ := b.Get(id)
+	nwe, _ := b.Get(id, nil)
 	if nwe.Subtype != "debug_session" {
 		t.Errorf("expected subtype=debug_session, got %q", nwe.Subtype)
 	}
@@ -137,7 +137,7 @@ func TestAddWithMetadata(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	nwe, _ := b.Get(id)
+	nwe, _ := b.Get(id, nil)
 	if string(nwe.Metadata) != `{"project":"cerebro"}` {
 		t.Errorf("expected metadata={\"project\":\"cerebro\"}, got %s", nwe.Metadata)
 	}
@@ -151,7 +151,7 @@ func TestAddDefaultImportance(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	nwe, _ := b.Get(id)
+	nwe, _ := b.Get(id, nil)
 	if nwe.Importance != 0.5 {
 		t.Errorf("expected default importance=0.5, got %f", nwe.Importance)
 	}
@@ -166,7 +166,7 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("Update content: %v", err)
 	}
 
-	nwe, _ := b.Get(id)
+	nwe, _ := b.Get(id, nil)
 	if nwe.Content != "updated" {
 		t.Errorf("expected content='updated', got %q", nwe.Content)
 	}
@@ -175,7 +175,7 @@ func TestUpdate(t *testing.T) {
 		t.Fatalf("Update importance: %v", err)
 	}
 
-	nwe, _ = b.Get(id)
+	nwe, _ = b.Get(id, nil)
 	if nwe.Importance != 0.9 {
 		t.Errorf("expected importance=0.9, got %f", nwe.Importance)
 	}
@@ -190,12 +190,12 @@ func TestSupersede(t *testing.T) {
 		t.Fatalf("Supersede: %v", err)
 	}
 
-	old, _ := b.Get(oldID)
+	old, _ := b.Get(oldID, nil)
 	if old.Status != "superseded" {
 		t.Errorf("old node status: expected superseded, got %s", old.Status)
 	}
 
-	new_, _ := b.Get(newID)
+	new_, _ := b.Get(newID, nil)
 	if new_.Status != "active" {
 		t.Errorf("new node status: expected active, got %s", new_.Status)
 	}
@@ -220,7 +220,7 @@ func TestReinforce(t *testing.T) {
 		t.Fatalf("Reinforce: %v", err)
 	}
 
-	nwe, _ := b.Get(id)
+	nwe, _ := b.Get(id, nil)
 	if nwe.AccessCount != 1 {
 		t.Errorf("expected access_count=1, got %d", nwe.AccessCount)
 	}
@@ -232,7 +232,7 @@ func TestAddEdge(t *testing.T) {
 	id1, _ := b.Add("node1", store.TypeConcept)
 	id2, _ := b.Add("node2", store.TypeConcept)
 
-	edgeID, err := b.AddEdge(id1, id2, "relates_to")
+	edgeID, err := b.AddEdge(id1, id2, "relates_to", store.AddEdgeOpts{})
 	if err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
@@ -240,7 +240,7 @@ func TestAddEdge(t *testing.T) {
 		t.Error("expected non-zero edge ID")
 	}
 
-	nwe, _ := b.Get(id1)
+	nwe, _ := b.Get(id1, nil)
 	if len(nwe.Edges) != 1 {
 		t.Fatalf("expected 1 edge, got %d", len(nwe.Edges))
 	}
@@ -259,8 +259,8 @@ func TestMarkConsolidated(t *testing.T) {
 		t.Fatalf("MarkConsolidated: %v", err)
 	}
 
-	n1, _ := b.Get(id1)
-	n2, _ := b.Get(id2)
+	n1, _ := b.Get(id1, nil)
+	n2, _ := b.Get(id2, nil)
 	if n1.Status != "consolidated" {
 		t.Errorf("node1 status: expected consolidated, got %s", n1.Status)
 	}
@@ -316,15 +316,15 @@ func TestStats(t *testing.T) {
 	if stats.ActiveNodes != 2 {
 		t.Errorf("expected 2 active nodes, got %d", stats.ActiveNodes)
 	}
-	if stats.SchemaVersion != "3" {
-		t.Errorf("expected schema_version=3, got %q", stats.SchemaVersion)
+	if stats.SchemaVersion != "4" {
+		t.Errorf("expected schema_version=4, got %q", stats.SchemaVersion)
 	}
 }
 
 func TestSearchWithoutEmbedder(t *testing.T) {
 	b := testBrain(t)
 
-	_, err := b.Search(context.Background(), "test query", 10, 0.7, nil)
+	_, err := b.Search(context.Background(), "test query", 10, 0.7, nil, nil)
 	if err == nil {
 		t.Fatal("expected error searching without embedder")
 	}
@@ -337,7 +337,7 @@ func TestSearchWithoutEmbedder_WithSubtypeFilter(t *testing.T) {
 	b := testBrain(t)
 	subtype := "routing-discovery"
 
-	_, err := b.Search(context.Background(), "test query", 10, 0.7, &subtype)
+	_, err := b.Search(context.Background(), "test query", 10, 0.7, &subtype, nil)
 	if err == nil {
 		t.Fatal("expected error searching without embedder (subtypeFilter should not mask error)")
 	}
@@ -484,7 +484,7 @@ func TestPromote_BasicCopy(t *testing.T) {
 		t.Fatal("expected non-empty global ID")
 	}
 
-	gNode, err := dst.Get(globalID)
+	gNode, err := dst.Get(globalID, nil)
 	if err != nil {
 		t.Fatalf("Get from global: %v", err)
 	}
@@ -511,7 +511,7 @@ func TestPromote_WithContentOverride(t *testing.T) {
 		t.Fatalf("Promote with content: %v", err)
 	}
 
-	gNode, err := dst.Get(globalID)
+	gNode, err := dst.Get(globalID, nil)
 	if err != nil {
 		t.Fatalf("Get from global: %v", err)
 	}
@@ -531,7 +531,7 @@ func TestPromote_ProvenanceMetadata(t *testing.T) {
 		t.Fatalf("Promote: %v", err)
 	}
 
-	gNode, err := dst.Get(globalID)
+	gNode, err := dst.Get(globalID, nil)
 	if err != nil {
 		t.Fatalf("Get from global: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestPromote_SourceMetadataUpdated(t *testing.T) {
 		t.Fatalf("Promote: %v", err)
 	}
 
-	srcNode, err := src.Get(srcID)
+	srcNode, err := src.Get(srcID, nil)
 	if err != nil {
 		t.Fatalf("Get source node: %v", err)
 	}
@@ -593,7 +593,7 @@ func TestPromote_PreservesType(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Promote %s: %v", nodeType, err)
 		}
-		gNode, _ := dst.Get(globalID)
+		gNode, _ := dst.Get(globalID, nil)
 		if gNode.Type != nodeType {
 			t.Errorf("type not preserved: expected %s, got %s", nodeType, gNode.Type)
 		}
@@ -674,7 +674,7 @@ func TestSearchWithGlobal_NoEmbedder(t *testing.T) {
 	src := testBrain(t)
 	dst := testBrain(t)
 
-	_, err := src.SearchWithGlobal(context.Background(), "query", 10, 0.3, dst, nil)
+	_, err := src.SearchWithGlobal(context.Background(), "query", 10, 0.3, dst, nil, nil)
 	if err == nil {
 		t.Fatal("expected error without embedder")
 	}
@@ -697,7 +697,7 @@ func TestBrainUpdate_WithUpdatedSubtype(t *testing.T) {
 		t.Fatalf("Update(WithUpdatedSubtype): %v", err)
 	}
 
-	nwe, err := b.Get(id)
+	nwe, err := b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -720,7 +720,7 @@ func TestBrainUpdate_WithUpdatedSubtype_Clear(t *testing.T) {
 	}
 
 	// Verify initial subtype
-	nwe, err := b.Get(id)
+	nwe, err := b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get before clear: %v", err)
 	}
@@ -733,7 +733,7 @@ func TestBrainUpdate_WithUpdatedSubtype_Clear(t *testing.T) {
 		t.Fatalf("Update(WithUpdatedSubtype clear): %v", err)
 	}
 
-	nwe, err = b.Get(id)
+	nwe, err = b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get after clear: %v", err)
 	}
@@ -758,7 +758,7 @@ func TestBrainUpdate_WithUpdatedSubtype_NoContentReembed(t *testing.T) {
 	}
 
 	// Content must be unchanged
-	nwe, err := b.Get(id)
+	nwe, err := b.Get(id, nil)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
@@ -820,7 +820,7 @@ func TestExport(t *testing.T) {
 
 	id1, _ := b.Add("concept one", store.TypeConcept, WithImportance(0.8))
 	id2, _ := b.Add("episode one", store.TypeEpisode)
-	if _, err := b.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := b.AddEdge(id1, id2, "relates_to", store.AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
@@ -844,7 +844,7 @@ func TestImport(t *testing.T) {
 	src := testBrain(t)
 	id1, _ := src.Add("concept", store.TypeConcept, WithImportance(0.8))
 	id2, _ := src.Add("episode", store.TypeEpisode)
-	if _, err := src.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := src.AddEdge(id1, id2, "relates_to", store.AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
@@ -867,7 +867,7 @@ func TestImport(t *testing.T) {
 	}
 
 	// Verify data in destination
-	nwe, err := dst.Get(id1)
+	nwe, err := dst.Get(id1, nil)
 	if err != nil {
 		t.Fatalf("Get from dst: %v", err)
 	}

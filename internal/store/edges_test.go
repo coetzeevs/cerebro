@@ -25,15 +25,15 @@ func TestGetEdgesBatch(t *testing.T) {
 		t.Fatalf("AddNode D: %v", err)
 	}
 
-	if _, err := s.AddEdge(idA, idB, "relates_to"); err != nil {
+	if _, err := s.AddEdge(idA, idB, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge A→B: %v", err)
 	}
-	if _, err := s.AddEdge(idA, idC, "supports"); err != nil {
+	if _, err := s.AddEdge(idA, idC, "supports", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge A→C: %v", err)
 	}
 
 	// Batch query for A and D
-	edgeMap, err := s.GetEdgesBatch([]string{idA, idD})
+	edgeMap, err := s.GetEdgesBatch([]string{idA, idD}, nil)
 	if err != nil {
 		t.Fatalf("GetEdgesBatch: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestGetEdgesBatch(t *testing.T) {
 	}
 
 	// B should show up when queried (as target)
-	edgeMap2, err := s.GetEdgesBatch([]string{idB})
+	edgeMap2, err := s.GetEdgesBatch([]string{idB}, nil)
 	if err != nil {
 		t.Fatalf("GetEdgesBatch B: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestGetEdgesBatch(t *testing.T) {
 	}
 
 	// Empty input should return empty map
-	empty, err := s.GetEdgesBatch([]string{})
+	empty, err := s.GetEdgesBatch([]string{}, nil)
 	if err != nil {
 		t.Fatalf("GetEdgesBatch empty: %v", err)
 	}

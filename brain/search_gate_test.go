@@ -55,7 +55,7 @@ func addUnembeddedNeighbor(t *testing.T, b *Brain, anchorID string) string {
 	if err != nil {
 		t.Fatalf("AddNode neighbor: %v", err)
 	}
-	if _, err := b.store.AddEdge(anchorID, nid, "relates_to"); err != nil {
+	if _, err := b.store.AddEdge(anchorID, nid, "relates_to", store.AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 	return nid
@@ -100,7 +100,7 @@ func TestSearch_GateSkipsExpansionAboveThreshold(t *testing.T) {
 	_ = b.store.SetMeta("config.expand_spread_threshold", "0.0")
 
 	before := skipCounter(t, b)
-	got, err := b.Search(context.Background(), "qqqqq", 10, 0.0, nil)
+	got, err := b.Search(context.Background(), "qqqqq", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestSearch_GateSkipsExpansionOnSmallSpread(t *testing.T) {
 	_ = b.store.SetMeta("config.expand_spread_threshold", "0.05")
 
 	before := skipCounter(t, b)
-	if _, err := b.Search(context.Background(), "qqqqq", 3, 0.0, nil); err != nil {
+	if _, err := b.Search(context.Background(), "qqqqq", 3, 0.0, nil, nil); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	if d := skipCounter(t, b) - before; d != 1 {
@@ -138,7 +138,7 @@ func TestSearch_GateSkipsExpansionOnSmallSpread(t *testing.T) {
 	// Contrast: spread condition at the 0.0 sentinel — same brain, no fire.
 	_ = b.store.SetMeta("config.expand_spread_threshold", "0.0")
 	before = skipCounter(t, b)
-	if _, err := b.Search(context.Background(), "qqqqq", 3, 0.0, nil); err != nil {
+	if _, err := b.Search(context.Background(), "qqqqq", 3, 0.0, nil, nil); err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	if d := skipCounter(t, b) - before; d != 0 {
@@ -157,7 +157,7 @@ func TestSearch_GateDoesNotFireBelowThreshold(t *testing.T) {
 	_ = b.store.SetMeta("config.expand_spread_threshold", "0.0")
 
 	before := skipCounter(t, b)
-	got, err := b.Search(context.Background(), "qqqqq", 10, 0.0, nil)
+	got, err := b.Search(context.Background(), "qqqqq", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestSearch_ZeroZeroIdenticalToPreFeaturePath(t *testing.T) {
 
 	const limit = 10
 	before := skipCounter(t, b)
-	got, err := b.Search(context.Background(), "qqqqq", limit, 0.0, nil)
+	got, err := b.Search(context.Background(), "qqqqq", limit, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestSearch_ZeroZeroIdenticalToPreFeaturePath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VectorSearch: %v", err)
 	}
-	want, err = b.store.ExpandGraph(want, limit)
+	want, err = b.store.ExpandGraph(want, limit, nil)
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}
@@ -234,7 +234,7 @@ func TestSearch_GatedOutputEqualsEdgelessExpandGraph(t *testing.T) {
 	_ = b.store.SetMeta("config.expand_spread_threshold", "0.0")
 
 	const limit = 3
-	got, err := b.Search(context.Background(), "qqqqq", limit, 0.0, nil)
+	got, err := b.Search(context.Background(), "qqqqq", limit, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestSearch_GatedOutputEqualsEdgelessExpandGraph(t *testing.T) {
 	if err != nil {
 		t.Fatalf("VectorSearch: %v", err)
 	}
-	want, err = b.store.ExpandGraph(want, limit) // edgeless: sort+cap only
+	want, err = b.store.ExpandGraph(want, limit, nil) // edgeless: sort+cap only
 	if err != nil {
 		t.Fatalf("ExpandGraph: %v", err)
 	}
@@ -272,7 +272,7 @@ func TestSearchReranked_GateSkipsExpansion(t *testing.T) {
 	_ = b.store.SetMeta("config.expand_threshold", "0.9")
 
 	before := skipCounter(t, b)
-	got, err := b.Search(context.Background(), "qqqqq", 10, 0.0, nil)
+	got, err := b.Search(context.Background(), "qqqqq", 10, 0.0, nil, nil)
 	if err != nil {
 		t.Fatalf("Search (reranked): %v", err)
 	}
@@ -296,7 +296,7 @@ func TestSearchWithGlobal_GatesBothStoresCounterOnProject(t *testing.T) {
 	_ = proj.store.SetMeta("config.expand_spread_threshold", "0.0")
 
 	beforeProj := skipCounter(t, proj)
-	got, err := proj.SearchWithGlobal(context.Background(), "qqqqq", 5, 0.0, glob, nil)
+	got, err := proj.SearchWithGlobal(context.Background(), "qqqqq", 5, 0.0, glob, nil, nil)
 	if err != nil {
 		t.Fatalf("SearchWithGlobal: %v", err)
 	}
@@ -323,7 +323,7 @@ func TestSearchWithGlobal_ZeroZeroExpandsBothStores(t *testing.T) {
 	_ = proj.store.SetMeta("config.expand_spread_threshold", "0.0")
 
 	before := skipCounter(t, proj)
-	got, err := proj.SearchWithGlobal(context.Background(), "qqqqq", 5, 0.0, glob, nil)
+	got, err := proj.SearchWithGlobal(context.Background(), "qqqqq", 5, 0.0, glob, nil, nil)
 	if err != nil {
 		t.Fatalf("SearchWithGlobal: %v", err)
 	}

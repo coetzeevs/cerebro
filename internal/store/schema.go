@@ -1,11 +1,12 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 )
 
-const schemaVersion = "3"
+const schemaVersion = "4"
 
 // applySchema creates all tables and indexes if they don't exist.
 func (s *Store) applySchema() error {
@@ -36,7 +37,13 @@ func (s *Store) applySchema() error {
 			last_surfaced DATETIME
 		)`,
 
-		// Relationship edges
+		// Relationship edges. valid_at/invalid_at carry the bi-temporal
+		// valid-time window (agentic-xtzn): the half-open interval
+		// [valid_at, invalid_at) during which the asserted relationship holds in
+		// the world. Both are nullable with NO default — NULL valid_at means
+		// "valid from -inf", NULL invalid_at means "still valid / open-ended".
+		// This is the valid-time axis, orthogonal to created_at (transaction
+		// time, when the row was written). See ADR-015.
 		`CREATE TABLE IF NOT EXISTS edges (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			source_id TEXT NOT NULL,
@@ -45,6 +52,8 @@ func (s *Store) applySchema() error {
 			weight REAL DEFAULT 1.0,
 			metadata JSON,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			valid_at DATETIME,
+			invalid_at DATETIME,
 			FOREIGN KEY (source_id) REFERENCES nodes(id) ON DELETE CASCADE,
 			FOREIGN KEY (target_id) REFERENCES nodes(id) ON DELETE CASCADE,
 			UNIQUE (source_id, target_id, relation)
@@ -287,7 +296,95 @@ func (s *Store) migrateSchema() error {
 		if err := s.SetMeta("schema_version", "3"); err != nil {
 			return fmt.Errorf("updating schema version to 3: %w", err)
 		}
+		version = "3"
 	}
 
+	// v3 -> v4: add the bi-temporal valid-time window columns to edges
+	// (agentic-xtzn). Follows the v1->v2 transaction-guarded ALTER idiom
+	// verbatim (NOT the 2lak guarded-create path): ALTER TABLE ADD COLUMN is a
+	// constant-time metadata-only operation that cannot fail on a build-tag /
+	// module-availability basis (unlike CREATE VIRTUAL TABLE … USING fts5), so
+	// it belongs inside the transaction, not the log-and-continue path. The
+	// `if version == "3"` guard runs the ALTERs exactly once: on a v4 brain this
+	// block is skipped, so a re-open never hits a duplicate-column error. The
+	// whole step is one transaction — a crash mid-migration rolls back and
+	// re-runs on next open. Placed AFTER the unconditional initFTSTable() call
+	// above so the FTS keyword index keeps firing on every Open regardless of
+	// edge-schema version.
+	if version == "3" {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("beginning v3->v4 migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		// Each ADD COLUMN is guarded on the column's actual absence (not just the
+		// version meta) so the step is self-healing: a brain whose edges table
+		// already carries a column but whose schema_meta lags at v3 (e.g. a
+		// partially-migrated or hand-edited brain) advances cleanly instead of
+		// hitting "duplicate column name". SQLite has no ALTER TABLE ADD COLUMN
+		// IF NOT EXISTS, so the presence check is explicit.
+		for _, col := range []string{"valid_at", "invalid_at"} {
+			has, err := txColumnExists(tx, "edges", col)
+			if err != nil {
+				return fmt.Errorf("checking edges.%s before v3->v4 migration: %w", col, err)
+			}
+			if has {
+				continue
+			}
+			if _, err := tx.Exec(`ALTER TABLE edges ADD COLUMN ` + col + ` DATETIME`); err != nil {
+				return fmt.Errorf("migrating v3->v4 (add %s): %w", col, err)
+			}
+		}
+
+		if _, err := tx.Exec(
+			`INSERT INTO schema_meta (key, value) VALUES ('schema_version', '4')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		); err != nil {
+			return fmt.Errorf("updating schema version to 4: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing v3->v4 migration: %w", err)
+		}
+		version = "4"
+	}
+
+	// version is intentionally re-assigned above for clarity and to keep each
+	// migration block self-contained; the value is consumed only by subsequent
+	// blocks (none follow v4 today).
+	_ = version
+
 	return nil
+}
+
+// txColumnExists reports whether the given table has a column of the given name,
+// using PRAGMA table_info within the supplied transaction. The column name is a
+// compile-time Go constant at all call sites; PRAGMA table_info takes the table
+// name as an identifier (not a bindable parameter), and `table` here is likewise
+// a constant — no user input reaches this query.
+func txColumnExists(tx *sql.Tx, table, column string) (bool, error) {
+	rows, err := tx.Query(`PRAGMA table_info(` + table + `)`)
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			cid     int
+			name    string
+			ctyp    string
+			notNull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &name, &ctyp, &notNull, &dflt, &pk); err != nil {
+			return false, err
+		}
+		if name == column {
+			return true, nil
+		}
+	}
+	return false, rows.Err()
 }

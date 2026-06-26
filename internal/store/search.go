@@ -246,7 +246,12 @@ func compositeScore(n *Node, similarity, structural float64) float64 {
 // For each result node, it follows edges to discover connected nodes.
 // Connected nodes not already in results are scored and merged in.
 // Result nodes connected to other results get a structural bonus.
-func (s *Store) ExpandGraph(results []ScoredNode, limit int) ([]ScoredNode, error) {
+//
+// When asOf is non-nil, only edges valid at that instant are traversed
+// (agentic-xtzn): the validity filter is applied at the edge-fetch SQL, so a
+// neighbour reachable only through an out-of-window edge is not expanded in. A
+// nil asOf omits the predicate entirely (byte-identical to the pre-xtzn path).
+func (s *Store) ExpandGraph(results []ScoredNode, limit int, asOf *time.Time) ([]ScoredNode, error) {
 	if len(results) == 0 {
 		return results, nil
 	}
@@ -262,7 +267,7 @@ func (s *Store) ExpandGraph(results []ScoredNode, limit int) ([]ScoredNode, erro
 	}
 
 	// Batch-fetch edges for all result nodes
-	edgeMap, err := s.GetEdgesBatch(resultIDs)
+	edgeMap, err := s.GetEdgesBatch(resultIDs, asOf)
 	if err != nil {
 		return nil, fmt.Errorf("expanding graph: %w", err)
 	}

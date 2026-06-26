@@ -272,14 +272,16 @@ func (s *Store) GetNode(id string) (*Node, error) {
 	return scanNode(row)
 }
 
-// GetNodeWithEdges retrieves a node and all its connected edges.
-func (s *Store) GetNodeWithEdges(id string) (*NodeWithEdges, error) {
+// GetNodeWithEdges retrieves a node and all its connected edges. When asOf is
+// non-nil, only edges valid at that instant are returned (agentic-xtzn); nil
+// returns all edges (byte-identical to the pre-xtzn path).
+func (s *Store) GetNodeWithEdges(id string, asOf *time.Time) (*NodeWithEdges, error) {
 	node, err := s.GetNode(id)
 	if err != nil {
 		return nil, err
 	}
 
-	edges, err := s.getEdgesForNode(id)
+	edges, err := s.getEdgesForNode(id, asOf)
 	if err != nil {
 		return nil, err
 	}

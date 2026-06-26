@@ -18,7 +18,7 @@ func TestExportBundle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AddNode: %v", err)
 	}
-	if _, err := s.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := s.AddEdge(id1, id2, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 	if err := s.SetMeta("embedding_provider", "ollama"); err != nil {
@@ -114,10 +114,10 @@ func TestListAllEdges(t *testing.T) {
 	id2, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n2", Importance: 0.5})
 	id3, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "n3", Importance: 0.5})
 
-	if _, err := s.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := s.AddEdge(id1, id2, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
-	if _, err := s.AddEdge(id2, id3, "supports"); err != nil {
+	if _, err := s.AddEdge(id2, id3, "supports", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 
@@ -163,9 +163,9 @@ func TestGetAllMeta(t *testing.T) {
 	if meta["key2"] != "val2" {
 		t.Errorf("expected key2=val2, got %q", meta["key2"])
 	}
-	// schema_version is set by Init (3 after the nodes_fts bump, agentic-2lak)
-	if meta["schema_version"] != "3" {
-		t.Errorf("expected schema_version=3, got %q", meta["schema_version"])
+	// schema_version is set by Init (4 after the xtzn validity-window bump, agentic-xtzn)
+	if meta["schema_version"] != "4" {
+		t.Errorf("expected schema_version=4, got %q", meta["schema_version"])
 	}
 }
 
@@ -222,7 +222,7 @@ func TestImportBundle(t *testing.T) {
 	src := testStore(t)
 	id1, _ := src.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "concept", Importance: 0.8})
 	id2, _ := src.AddNode(&AddNodeOpts{Type: TypeEpisode, Content: "episode", Importance: 0.5})
-	if _, err := src.AddEdge(id1, id2, "relates_to"); err != nil {
+	if _, err := src.AddEdge(id1, id2, "relates_to", AddEdgeOpts{}); err != nil {
 		t.Fatalf("AddEdge: %v", err)
 	}
 

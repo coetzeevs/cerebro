@@ -17,6 +17,17 @@ type AddNodeOpts struct {
 	Metadata       json.RawMessage
 	Importance     float64
 	EmbeddingModel string
+	// ProvenanceRoot, when true, marks the node as a first-class provenance
+	// source (nodes.provenance_root=1). Defaults to false (0). agentic-lbjg.
+	ProvenanceRoot bool
+}
+
+// boolToInt maps a Go bool to the 0/1 INTEGER SQLite stores for boolean flags.
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 // AddNode inserts a new memory node and returns its ID.
@@ -30,10 +41,10 @@ func (s *Store) AddNode(opts *AddNodeOpts) (string, error) {
 	}
 
 	_, err := s.db.Exec(`
-		INSERT INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, embedding_model)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, embedding_model, provenance_root)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, opts.Type, nullString(opts.Subtype), opts.Content, nullJSON(opts.Metadata),
-		importance, decayRate, opts.EmbeddingModel,
+		importance, decayRate, opts.EmbeddingModel, boolToInt(opts.ProvenanceRoot),
 	)
 	if err != nil {
 		return "", fmt.Errorf("inserting node: %w", err)
@@ -267,7 +278,7 @@ func (s *Store) ResolvePrefix(prefix string) (string, error) {
 func (s *Store) GetNode(id string) (*Node, error) {
 	row := s.db.QueryRow(`SELECT id, type, subtype, content, metadata, importance, decay_rate,
 		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-		updated_at, last_surfaced
+		updated_at, last_surfaced, provenance_root
 		FROM nodes WHERE id = ?`, id)
 	return scanNode(row)
 }
@@ -310,7 +321,7 @@ type ListNodesOpts struct {
 func (s *Store) ListNodes(opts ListNodesOpts) ([]Node, error) { //nolint:gocritic // hugeParam: ListNodesOpts is intentionally a value type for clarity; cost is copy-on-call not heap alloc
 	query := `SELECT id, type, subtype, content, metadata, importance, decay_rate,
 		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-		updated_at, last_surfaced
+		updated_at, last_surfaced, provenance_root
 		FROM nodes WHERE 1=1`
 	var args []any
 
@@ -455,7 +466,7 @@ func (s *Store) GetNodesByIDs(ids []string) ([]Node, error) {
 
 	query := fmt.Sprintf(`SELECT id, type, subtype, content, metadata, importance, decay_rate,
 		access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-		updated_at, last_surfaced
+		updated_at, last_surfaced, provenance_root
 		FROM nodes WHERE id IN (%s) AND status = 'active'`, placeholders) //nolint:gosec // placeholders are ? not user input
 
 	rows, err := s.db.Query(query, args...)
@@ -509,15 +520,17 @@ func (s *Store) TouchSurfaced(ids []string) error {
 func scanNode(row *sql.Row) (*Node, error) {
 	n := &Node{}
 	var subtype, metadata, lastReinforced, updatedAt, lastSurfaced sql.NullString
+	var provenanceRoot int
 	err := row.Scan(
 		&n.ID, &n.Type, &subtype, &n.Content, &metadata,
 		&n.Importance, &n.DecayRate, &n.AccessCount, &n.TimesReinforced,
 		&n.Status, &n.EmbeddingModel, &n.CreatedAt, &n.LastAccessed, &lastReinforced,
-		&updatedAt, &lastSurfaced,
+		&updatedAt, &lastSurfaced, &provenanceRoot,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scanning node: %w", err)
 	}
+	n.ProvenanceRoot = provenanceRoot != 0
 	n.Subtype = subtype.String
 	if metadata.Valid {
 		n.Metadata = json.RawMessage(metadata.String)
@@ -540,15 +553,17 @@ func scanNode(row *sql.Row) (*Node, error) {
 func scanNodeFromRows(rows *sql.Rows) (*Node, error) {
 	n := &Node{}
 	var subtype, metadata, lastReinforced, updatedAt, lastSurfaced sql.NullString
+	var provenanceRoot int
 	err := rows.Scan(
 		&n.ID, &n.Type, &subtype, &n.Content, &metadata,
 		&n.Importance, &n.DecayRate, &n.AccessCount, &n.TimesReinforced,
 		&n.Status, &n.EmbeddingModel, &n.CreatedAt, &n.LastAccessed, &lastReinforced,
-		&updatedAt, &lastSurfaced,
+		&updatedAt, &lastSurfaced, &provenanceRoot,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("scanning node: %w", err)
 	}
+	n.ProvenanceRoot = provenanceRoot != 0
 	n.Subtype = subtype.String
 	if metadata.Valid {
 		n.Metadata = json.RawMessage(metadata.String)

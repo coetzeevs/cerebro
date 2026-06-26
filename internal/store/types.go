@@ -50,6 +50,16 @@ type Node struct {
 	LastReinforced  *time.Time      `json:"last_reinforced,omitempty"`
 	UpdatedAt       *time.Time      `json:"updated_at,omitempty"`
 	LastSurfaced    *time.Time      `json:"last_surfaced,omitempty"`
+	// ProvenanceRoot marks the node as a first-class provenance source
+	// (agentic-lbjg). Stored as a 0/1 INTEGER in nodes.provenance_root.
+	ProvenanceRoot bool `json:"provenance_root"`
+}
+
+// NodeWithDepth is a node paired with its BFS depth from a WalkRelation start
+// node (agentic-lbjg). Depth 0 is the start node itself.
+type NodeWithDepth struct {
+	Node
+	Depth int `json:"depth"`
 }
 
 // Edge represents a directed relationship between two nodes.

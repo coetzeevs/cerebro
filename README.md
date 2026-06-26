@@ -76,7 +76,8 @@ cerebro stats
 | `edge` | Create a relationship between nodes |
 | `reinforce` | Increment access count on a memory |
 | `supersede` | Replace a memory with an updated version |
-| `mark-consolidated` | Mark episodes as consolidated |
+| `mark-consolidated` | Mark episodes as consolidated (status only, no edges) |
+| `consolidate` | Consolidate source episodes into a node, recording `derived_from` provenance |
 | `promote` | Copy a node to the global store |
 | `gc` | Evict decayed memories to archive |
 | `export` | Export brain (json, sql, or sqlite) |
@@ -100,6 +101,46 @@ Cerebro supports four semantic memory types, each with a different decay rate:
 | `reflection` | What I concluded — self-reflective insights | ~3-4 weeks |
 
 Decay drives garbage collection: low-importance episodes fade quickly, while high-importance procedures persist for months.
+
+## Provenance (agentic-lbjg)
+
+Provenance is structural, not freeform. A built-in `derived_from` relation links a
+derived node (concept/procedure/reflection) back to the source episodes it was
+synthesized from.
+
+```bash
+# Consolidate two episodes into a concept, auto-writing derived_from edges
+cerebro consolidate --into <concept-id> <episode-id-1> <episode-id-2>
+
+# Walk the lineage chain (default depth 5)
+cerebro get <concept-id> --with-provenance
+cerebro get <concept-id> --with-provenance=3        # custom depth (clamped to 100)
+
+# Attach a chain per recall result (default depth 1)
+cerebro recall "query" --with-provenance
+cerebro recall "query" --provenance-depth 3
+
+# Mark a node as a first-class provenance source
+cerebro add "source memory" --type episode --provenance-root
+```
+
+`consolidate --into` is atomic and fail-closed (the into-node and every source
+must resolve as an episode, else a non-zero exit with no partial write) and
+idempotent (re-running writes no duplicate edges). It is distinct from
+`mark-consolidated`, which only flips status and writes no edges.
+
+`get`/`list`/`recall` JSON output carries a computed **`provenance_status`** field:
+
+| Value | Meaning |
+|-------|---------|
+| `complete` | has ≥1 outgoing `derived_from` edge |
+| `none` | no provenance edge, created after the convention boundary |
+| `legacy` | no provenance edge, predates the convention (a v4-or-earlier brain's pre-migration nodes) |
+
+`provenance_status` is computed at query time (no stored column). The legacy
+boundary is recorded once, at the v4→v5 migration instant, in `schema_meta`. See
+`docs/adrs/ADR-016-provenance-edges-and-walk-primitive.md` for the BFS-vs-CTE walk
+decision and the legacy-boundary mechanism.
 
 ## Embedding providers
 
@@ -308,11 +349,19 @@ defer b.Close()
 
 id, _ := b.Add("PLA prints at 210C", brain.Concept, brain.WithImportance(0.7))
 results, _ := b.Search(ctx, "filament temperature", 5, 0.3)
+
+// Provenance (agentic-lbjg) — additive API:
+root, _ := b.Add("source episode", brain.Episode, brain.WithProvenanceRoot())
+_ = b.Consolidate(conceptID, []string{episodeID})          // auto-write derived_from edges
+chain, _ := b.WalkProvenance(conceptID, 5)                  // []brain.NodeWithDepth lineage
+status, _ := b.ProvenanceStatus([]string{conceptID})        // id -> complete|none|legacy
 ```
 
-Types available: `brain.Node`, `brain.ScoredNode`, `brain.NodeWithEdges`, `brain.NodeType`, `brain.ListNodesOpts`, `brain.Stats`, `brain.Edge`, `brain.GCResult`, `brain.ExportBundle`, `brain.ImportOptions`, `brain.ImportResult`.
+Types available: `brain.Node`, `brain.ScoredNode`, `brain.NodeWithEdges`, `brain.NodeWithDepth`, `brain.NodeType`, `brain.ListNodesOpts`, `brain.Stats`, `brain.Edge`, `brain.GCResult`, `brain.ExportBundle`, `brain.ImportOptions`, `brain.ImportResult`.
 
-Constants: `brain.Episode`, `brain.Concept`, `brain.Procedure`, `brain.Reflection`.
+Constants: `brain.Episode`, `brain.Concept`, `brain.Procedure`, `brain.Reflection`, `brain.RelationDerivedFrom`.
+
+Provenance methods: `brain.WithProvenanceRoot()` (AddOption), `b.Consolidate(intoID, episodeIDs)`, `b.WalkProvenance(id, depth)`, `b.ProvenanceStatus(ids)`. The underlying reusable BFS primitive is `store.WalkRelation(startID, relation, maxDepth, outgoing)`.
 
 ## Ecosystem
 

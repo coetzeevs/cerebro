@@ -18,6 +18,8 @@ var recallPrimeFlag bool
 var recallGlobalFlag bool
 var recallSubtypeFlag string
 var recallAsOfFlag string
+var recallWithProvenanceFlag int
+var recallProvenanceDepthFlag int
 
 func init() {
 	cmd := &cobra.Command{
@@ -49,6 +51,14 @@ Half-open window [valid_at, invalid_at); NULL bounds are open-ended.
 Independent of --subtype (both may be supplied).
 NOTE: --as-of is a no-op when the lazy-expansion gate skips expansion for the query
 (no edges are traversed, so there is nothing to filter), and is ignored in --prime mode.`)
+	cmd.Flags().IntVar(&recallWithProvenanceFlag, "with-provenance", 1,
+		`Attach the derived_from lineage chain per result (agentic-lbjg).
+Bare --with-provenance walks depth 1 (immediate parents); --with-provenance=N walks depth N.
+Depth is clamped to 100. Omitting the flag is byte-identical to pre-provenance output.
+A computed provenance_status field (complete|none|legacy) always appears in JSON output.`)
+	cmd.Flags().Lookup("with-provenance").NoOptDefVal = "1"
+	cmd.Flags().IntVar(&recallProvenanceDepthFlag, "provenance-depth", 1,
+		`Explicit provenance-walk depth (alias for --with-provenance=N; wins if both are given). Clamped to 100.`)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -117,8 +127,66 @@ func runRecall(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	outputScoredList(results)
+	// Provenance resolution (AC5): --provenance-depth wins over --with-provenance=N
+	// if both are given (documented). The chain is attached only when at least one
+	// of the flags is engaged, so the flag-absent path stays byte-identical.
+	withProvenance := cmd.Flags().Changed("with-provenance") || cmd.Flags().Changed("provenance-depth")
+	depth := recallWithProvenanceFlag
+	if cmd.Flags().Changed("provenance-depth") {
+		depth = recallProvenanceDepthFlag
+	}
+	depth = clampProvenanceDepth(depth)
+
+	outputScoredListWithProvenance(b, results, withProvenance, depth)
 	return nil
+}
+
+// outputScoredListWithProvenance renders recall results, attaching the computed
+// provenance_status (always, in JSON) and the optional --with-provenance lineage
+// chain per result. When withProvenance is false and format is md, the output is
+// byte-identical to the pre-lbjg outputScoredList path.
+func outputScoredListWithProvenance(b *brain.Brain, nodes []store.ScoredNode, withProvenance bool, depth int) {
+	if formatFlag == "json" {
+		ids := make([]string, len(nodes))
+		for i := range nodes {
+			ids[i] = nodes[i].ID
+		}
+		statuses := provenanceStatusForAll(b, ids)
+
+		out := make([]scoredNodeWithProvenance, len(nodes))
+		for i := range nodes {
+			out[i] = scoredNodeWithProvenance{
+				ScoredNode:       nodes[i],
+				ProvenanceStatus: statuses[nodes[i].ID],
+			}
+			if withProvenance {
+				walk, err := b.WalkProvenance(nodes[i].ID, depth)
+				if err == nil {
+					out[i].Provenance = toProvenanceChain(walk)
+				}
+			}
+		}
+		outputJSON(out)
+		return
+	}
+
+	// md: when no provenance flag is engaged, this is byte-identical to
+	// outputScoredList (the pre-lbjg path).
+	if !withProvenance {
+		outputScoredList(nodes)
+		return
+	}
+	if len(nodes) == 0 {
+		fmt.Println("No relevant memories found.")
+		return
+	}
+	for i := range nodes {
+		outputScoredNode(&nodes[i])
+		walk, err := b.WalkProvenance(nodes[i].ID, depth)
+		if err == nil {
+			renderProvenanceChainMD(toProvenanceChain(walk), depth)
+		}
+	}
 }
 
 // primeStratified returns a type-balanced selection of memories for session priming.

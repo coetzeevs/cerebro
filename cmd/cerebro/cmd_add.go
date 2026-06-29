@@ -34,6 +34,7 @@ import (
 var addTypeFlag string
 var addImportanceFlag float64
 var addSubtypeFlag string
+var addProvenanceRootFlag bool
 
 // addBeadsIdFlag holds the --beads-id flag value (raw, pre-trim).
 // N-S1: trimmed and validated against beadsIdRegexp before use.
@@ -57,6 +58,10 @@ func init() {
 	cmd.Flags().StringVarP(&addTypeFlag, "type", "t", "episode", "Memory type: episode, concept, procedure, reflection")
 	cmd.Flags().Float64VarP(&addImportanceFlag, "importance", "i", 0.5, "Importance score (0.0-1.0)")
 	cmd.Flags().StringVar(&addSubtypeFlag, "subtype", "", "Memory subtype")
+	// --provenance-root marks the node as a first-class provenance source
+	// (nodes.provenance_root=1; agentic-lbjg). Default false (0).
+	cmd.Flags().BoolVar(&addProvenanceRootFlag, "provenance-root", false,
+		"Mark this node as a first-class provenance source (provenance_root=1)")
 	// --beads-id: optional beads task id for forensic linkage (HS-039).
 	// Value is trimmed and validated against the HS-029 canonical regex before persisting.
 	cmd.Flags().StringVar(&addBeadsIdFlag, "beads-id", "", "Beads task id to tag this memory with (forensic linkage); must match ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$")
@@ -81,6 +86,9 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	opts = append(opts, brain.WithImportance(addImportanceFlag))
 	if addSubtypeFlag != "" {
 		opts = append(opts, brain.WithSubtype(addSubtypeFlag))
+	}
+	if addProvenanceRootFlag {
+		opts = append(opts, brain.WithProvenanceRoot())
 	}
 
 	// N-S1 (HS-039): trim first, then validate.

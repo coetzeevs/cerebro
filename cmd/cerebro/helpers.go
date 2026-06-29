@@ -43,6 +43,66 @@ func outputJSON(v any) {
 	_ = enc.Encode(v)
 }
 
+// maxProvenanceDepth is the documented upper bound on a provenance-walk depth
+// (Security NOTE A — defense-in-depth bound on the BFS hop budget). The BFS is
+// already O(reachable nodes) by the visited set, but the clamp bounds the
+// per-level batched-query count for a hostile/typo'd --provenance-depth. Any
+// requested depth above this is silently clamped to it.
+const maxProvenanceDepth = 100
+
+// clampProvenanceDepth bounds a requested provenance-walk depth to
+// [0, maxProvenanceDepth]. Negative values are passed through to WalkRelation
+// (which treats <=0 as "start node only").
+func clampProvenanceDepth(depth int) int {
+	if depth > maxProvenanceDepth {
+		return maxProvenanceDepth
+	}
+	return depth
+}
+
+// provenanceChainItem is one node in a rendered provenance chain (md/json).
+type provenanceChainItem struct {
+	ID      string         `json:"id"`
+	Type    store.NodeType `json:"type"`
+	Content string         `json:"content"`
+	Depth   int            `json:"depth"`
+}
+
+// toProvenanceChain converts a WalkProvenance result (which includes the start
+// node at depth 0) into the rendered chain of SOURCES — the start node is
+// dropped, only depth>=1 lineage nodes remain.
+func toProvenanceChain(walk []store.NodeWithDepth) []provenanceChainItem {
+	chain := make([]provenanceChainItem, 0, len(walk))
+	for i := range walk {
+		if walk[i].Depth == 0 {
+			continue // skip the start node itself
+		}
+		chain = append(chain, provenanceChainItem{
+			ID:      walk[i].ID,
+			Type:    walk[i].Type,
+			Content: walk[i].Content,
+			Depth:   walk[i].Depth,
+		})
+	}
+	return chain
+}
+
+// renderProvenanceChainMD prints a "## Provenance (depth N)" block to stdout.
+// Only called when --with-provenance is engaged, so flag-absent output is
+// byte-identical to the pre-lbjg path.
+func renderProvenanceChainMD(chain []provenanceChainItem, depth int) {
+	fmt.Printf("## Provenance (depth %d)\n", depth)
+	if len(chain) == 0 {
+		fmt.Printf("  (no recorded provenance)\n\n")
+		return
+	}
+	for i := range chain {
+		c := &chain[i]
+		fmt.Printf("  %s [%s] depth=%d\n", c.ID[:8], c.Type, c.Depth)
+	}
+	fmt.Println()
+}
+
 // outputNode formats a node for display.
 func outputNode(n *store.Node) {
 	if formatFlag == "json" {

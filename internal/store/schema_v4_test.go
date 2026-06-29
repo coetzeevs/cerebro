@@ -36,8 +36,8 @@ func edgeColumns(t *testing.T, s *Store) map[string]bool {
 }
 
 // TestFreshInitHasValidityColumnsAtV4 verifies a freshly-initialised brain
-// carries schema_version=4 and the edges table has valid_at + invalid_at
-// (AC1 — fresh Init is v4 with columns).
+// carries the current schema_version (now 5 after the lbjg provenance_root bump)
+// and the edges table still has the xtzn valid_at + invalid_at columns.
 func TestFreshInitHasValidityColumnsAtV4(t *testing.T) {
 	s := testStore(t)
 
@@ -45,8 +45,8 @@ func TestFreshInitHasValidityColumnsAtV4(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "4" {
-		t.Fatalf("expected schema_version=4 on fresh Init, got %q", ver)
+	if ver != "5" {
+		t.Fatalf("expected schema_version=5 on fresh Init, got %q", ver)
 	}
 
 	cols := edgeColumns(t, s)
@@ -140,8 +140,8 @@ func TestMigrationFromV3AddsValidityColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta after migration: %v", err)
 	}
-	if ver != "4" {
-		t.Fatalf("expected schema_version=4 after v3->v4 migration, got %q", ver)
+	if ver != "5" {
+		t.Fatalf("expected schema_version=5 after v3->v4->v5 ladder, got %q", ver)
 	}
 
 	cols := edgeColumns(t, s2)
@@ -185,8 +185,8 @@ func TestMigrationFromV3Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "4" {
-		t.Fatalf("expected schema_version=4 after idempotent re-open, got %q", ver)
+	if ver != "5" {
+		t.Fatalf("expected schema_version=5 after idempotent re-open, got %q", ver)
 	}
 }
 
@@ -226,8 +226,8 @@ func TestMigrationV3ToV4SelfHealsExistingColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "4" {
-		t.Fatalf("expected schema_version=4 after self-heal, got %q", ver)
+	if ver != "5" {
+		t.Fatalf("expected schema_version=5 after self-heal, got %q", ver)
 	}
 	cols := edgeColumns(t, s2)
 	if !cols["valid_at"] || !cols["invalid_at"] {
@@ -257,8 +257,8 @@ func TestMigrationFromV1ReachesV4(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "4" {
-		t.Fatalf("expected schema_version=4 after full ladder, got %q", ver)
+	if ver != "5" {
+		t.Fatalf("expected schema_version=5 after full ladder, got %q", ver)
 	}
 	cols := edgeColumns(t, s2)
 	if !cols["valid_at"] || !cols["invalid_at"] {

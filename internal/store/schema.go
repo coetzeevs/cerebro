@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 )
 
-const schemaVersion = "4"
+const schemaVersion = "5"
 
 // applySchema creates all tables and indexes if they don't exist.
 func (s *Store) applySchema() error {
@@ -34,7 +35,12 @@ func (s *Store) applySchema() error {
 			last_accessed DATETIME DEFAULT CURRENT_TIMESTAMP,
 			last_reinforced DATETIME,
 			updated_at DATETIME,
-			last_surfaced DATETIME
+			last_surfaced DATETIME,
+			-- provenance_root marks a node as a first-class provenance source
+			-- (agentic-lbjg). 0/1 integer flag (SQLite has no native BOOLEAN);
+			-- NOT NULL DEFAULT 0 so existing rows backfill to 0 on the v4->v5
+			-- ALTER and a flagless add defaults to 0.
+			provenance_root INTEGER NOT NULL DEFAULT 0
 		)`,
 
 		// Relationship edges. valid_at/invalid_at carry the bi-temporal
@@ -109,6 +115,20 @@ func (s *Store) applySchema() error {
 	)
 	if err != nil {
 		return fmt.Errorf("setting schema version: %w", err)
+	}
+
+	// Provenance convention boundary (agentic-lbjg). On a fresh v5 Init the brain
+	// has no legacy era: stamp the boundary at the brain's birth instant so every
+	// node created from now on is at/after the boundary (reads none/complete, never
+	// legacy). INSERT OR IGNORE is the one-time-stamp guard — a re-Init or a brain
+	// migrated to v5 (which set the boundary inside the v4->v5 tx) is never
+	// re-stamped. The value is the storage-layout instant, parsed back into a
+	// time.Time at comparison time (provenanceStatus), never compared as a string.
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO schema_meta (key, value) VALUES (?, ?)`,
+		MetaProvenanceConventionSince, time.Now().UTC().Format(storageTimeLayout),
+	); err != nil {
+		return fmt.Errorf("setting provenance convention boundary: %w", err)
 	}
 
 	return nil
@@ -350,9 +370,63 @@ func (s *Store) migrateSchema() error {
 		version = "4"
 	}
 
+	// v4 -> v5: add the provenance_root flag column to nodes (agentic-lbjg) and
+	// stamp the provenance-convention boundary. Follows the v3->v4 transaction-
+	// guarded ALTER idiom verbatim: ALTER TABLE ADD COLUMN is a constant-time
+	// metadata-only operation (not a build-tag-dependent CREATE VIRTUAL TABLE), so
+	// it belongs inside the transaction. The ADD is guarded on the column's actual
+	// absence (txColumnExists) so a partially-migrated brain self-heals instead of
+	// hitting "duplicate column name". `INTEGER NOT NULL DEFAULT 0` is legal for
+	// ADD COLUMN because the default is a non-NULL constant (live-probed on SQLite
+	// 3.51.2); existing rows backfill to 0 with no row rewrite. The boundary meta
+	// is the migration instant, so all pre-existing nodes read `legacy` and
+	// post-migration nodes read `none`/`complete`. The whole step is one tx — a
+	// crash mid-migration rolls back and re-runs on next open. See ADR-016.
+	if version == "4" {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("beginning v4->v5 migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		has, err := txColumnExists(tx, "nodes", "provenance_root")
+		if err != nil {
+			return fmt.Errorf("checking nodes.provenance_root before v4->v5 migration: %w", err)
+		}
+		if !has {
+			if _, err := tx.Exec(
+				`ALTER TABLE nodes ADD COLUMN provenance_root INTEGER NOT NULL DEFAULT 0`,
+			); err != nil {
+				return fmt.Errorf("migrating v4->v5 (add provenance_root): %w", err)
+			}
+		}
+
+		// Stamp the convention boundary inside the tx. INSERT OR IGNORE so a brain
+		// that already carries the boundary (e.g. re-run after a partial migration)
+		// is never re-stamped — the boundary is a one-time instant.
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO schema_meta (key, value) VALUES (?, ?)`,
+			MetaProvenanceConventionSince, time.Now().UTC().Format(storageTimeLayout),
+		); err != nil {
+			return fmt.Errorf("migrating v4->v5 (set provenance boundary): %w", err)
+		}
+
+		if _, err := tx.Exec(
+			`INSERT INTO schema_meta (key, value) VALUES ('schema_version', '5')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		); err != nil {
+			return fmt.Errorf("updating schema version to 5: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing v4->v5 migration: %w", err)
+		}
+		version = "5"
+	}
+
 	// version is intentionally re-assigned above for clarity and to keep each
 	// migration block self-contained; the value is consumed only by subsequent
-	// blocks (none follow v4 today).
+	// blocks (none follow v5 today).
 	_ = version
 
 	return nil

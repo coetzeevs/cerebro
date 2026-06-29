@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/coetzeevs/cerebro/brain"
 	"github.com/coetzeevs/cerebro/internal/store"
 	"github.com/spf13/cobra"
 )
@@ -55,6 +56,31 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	outputNodeList(nodes)
+	outputNodeListWithProvenance(b, nodes)
 	return nil
+}
+
+// outputNodeListWithProvenance renders a node list, attaching the computed
+// provenance_status (AC6) to each node in JSON output. The md output is
+// byte-identical to the pre-lbjg outputNodeList path (list never renders a
+// chain — provenance_status surfaces in JSON only).
+func outputNodeListWithProvenance(b *brain.Brain, nodes []store.Node) {
+	if formatFlag != "json" {
+		outputNodeList(nodes)
+		return
+	}
+	ids := make([]string, len(nodes))
+	for i := range nodes {
+		ids[i] = nodes[i].ID
+	}
+	statuses := provenanceStatusForAll(b, ids)
+
+	out := make([]nodeWithProvenanceStatus, len(nodes))
+	for i := range nodes {
+		out[i] = nodeWithProvenanceStatus{
+			Node:             nodes[i],
+			ProvenanceStatus: statuses[nodes[i].ID],
+		}
+	}
+	outputJSON(out)
 }

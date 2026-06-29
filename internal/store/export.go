@@ -162,13 +162,13 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 	case ConflictReplace:
 		insertSQL = `INSERT OR REPLACE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate,
 			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-			updated_at, last_surfaced)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			updated_at, last_surfaced, provenance_root)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	default: // skip
 		insertSQL = `INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate,
 			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-			updated_at, last_surfaced)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			updated_at, last_surfaced, provenance_root)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	}
 
 	nodeStmt, err := tx.Prepare(insertSQL)
@@ -199,6 +199,7 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 			lastReinforced,
 			updatedAt,
 			lastSurfaced,
+			boolToInt(n.ProvenanceRoot),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("importing node %s: %w", n.ID, err)
@@ -306,7 +307,7 @@ func (s *Store) ExportSQL(w io.Writer) error {
 			lastSurfaced = fmt.Sprintf("'%s'", n.LastSurfaced.UTC().Format(time.RFC3339))
 		}
 		if _, err := fmt.Fprintf(w,
-			"INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced, updated_at, last_surfaced) VALUES ('%s', '%s', %s, '%s', %s, %f, %f, %d, %d, '%s', '%s', '%s', '%s', %s, %s, %s);\n",
+			"INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced, updated_at, last_surfaced, provenance_root) VALUES ('%s', '%s', %s, '%s', %s, %f, %f, %d, %d, '%s', '%s', '%s', '%s', %s, %s, %s, %d);\n",
 			sqlEscape(n.ID), n.Type, subtype, sqlEscape(n.Content), metadata,
 			n.Importance, n.DecayRate, n.AccessCount, n.TimesReinforced,
 			n.Status, sqlEscape(n.EmbeddingModel),
@@ -315,6 +316,7 @@ func (s *Store) ExportSQL(w io.Writer) error {
 			lastReinforced,
 			updatedAt,
 			lastSurfaced,
+			boolToInt(n.ProvenanceRoot),
 		); err != nil {
 			return err
 		}

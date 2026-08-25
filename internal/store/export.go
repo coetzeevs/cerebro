@@ -329,9 +329,20 @@ func (s *Store) ExportSQL(w io.Writer) error {
 		if len(e.Metadata) > 0 {
 			metadata = fmt.Sprintf("'%s'", sqlEscape(string(e.Metadata)))
 		}
+		// Validity bounds emit in the storage layout ("2006-01-02 15:04:05"),
+		// never RFC3339 — the as-of predicate compares raw strings, so a
+		// layout drift here would silently defeat --as-of after a reimport.
+		validAt := "NULL"
+		if e.ValidAt != nil {
+			validAt = fmt.Sprintf("'%s'", e.ValidAt.UTC().Format(storageTimeLayout))
+		}
+		invalidAt := "NULL"
+		if e.InvalidAt != nil {
+			invalidAt = fmt.Sprintf("'%s'", e.InvalidAt.UTC().Format(storageTimeLayout))
+		}
 		if _, err := fmt.Fprintf(w,
-			"INSERT OR IGNORE INTO edges (source_id, target_id, relation, weight, metadata) VALUES ('%s', '%s', '%s', %f, %s);\n",
-			sqlEscape(e.SourceID), sqlEscape(e.TargetID), sqlEscape(e.Relation), e.Weight, metadata,
+			"INSERT OR IGNORE INTO edges (source_id, target_id, relation, weight, metadata, valid_at, invalid_at) VALUES ('%s', '%s', '%s', %f, %s, %s, %s);\n",
+			sqlEscape(e.SourceID), sqlEscape(e.TargetID), sqlEscape(e.Relation), e.Weight, metadata, validAt, invalidAt,
 		); err != nil {
 			return err
 		}

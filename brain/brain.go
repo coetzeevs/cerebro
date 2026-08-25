@@ -327,7 +327,12 @@ func (b *Brain) Search(ctx context.Context, query string, limit int, threshold f
 
 	vec, err := b.embedder.Embed(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("embedding query: %w", err)
+		// N3 availability fallback: a configured-but-unavailable embedder
+		// (e.g. Ollama down) must not take recall down with it — the BM25
+		// keyword lane needs no embedding. Degrade to keyword-only; the
+		// 'none' provider never reaches here (Dimensions()==0 precondition
+		// above), so configured-out behaviour is unchanged.
+		return b.searchKeywordOnly(query, limit, subtypeFilter, err)
 	}
 
 	// Reranking is OFF by default (agentic-2ixw). When disabled, this is the
@@ -431,7 +436,10 @@ func (b *Brain) SearchWithGlobal(ctx context.Context, query string, limit int, t
 
 	vec, err := b.embedder.Embed(ctx, query)
 	if err != nil {
-		return nil, fmt.Errorf("embedding query: %w", err)
+		// N3 availability fallback (see Search): keyword-only on the PROJECT
+		// store. The global store's keyword lane is out of scope by the same
+		// contract that excludes it from BM25 fusion — the warning says so.
+		return b.searchKeywordOnly(query, limit, subtypeFilter, err)
 	}
 
 	// Over-retrieve width per store. Disabled path keeps today's limit*2 merge
@@ -745,4 +753,12 @@ func WithUpdatedImportance(i float64) UpdateOption {
 // metadata — it changes what the memory means to the retrieval taxonomy.
 func WithUpdatedSubtype(s string) UpdateOption {
 	return func(o *updateOptions) { o.Subtype = &s }
+}
+
+// TouchAccessed forwards retrieval-usage telemetry to the store (N2). The CLI
+// calls this for query-mode recall/search results; library consumers (and the
+// eval harness, which must not perturb the brain between A/B runs) do not get
+// implicit touching — Search stays read-only.
+func (b *Brain) TouchAccessed(ids []string) error {
+	return b.store.TouchAccessed(ids)
 }

@@ -1,6 +1,8 @@
 package brain
 
 import (
+	"fmt"
+	"os"
 	"sort"
 
 	"github.com/coetzeevs/cerebro/internal/store"
@@ -122,4 +124,27 @@ func fuseRecallRRF(vectorSet, keywordSet []store.ScoredNode, k int) []store.Scor
 		out[i] = order[i].node
 	}
 	return out
+}
+
+// searchKeywordOnly is the N3 embedder-failure fallback: keyword-lane-only
+// recall when the query cannot be embedded. BM25 rank is the ranking signal
+// (mirroring the fusion contract); Scores degrade to importance+recency via
+// RescoreKeywordOnly. No expansion (the gate's similarity precondition does
+// not hold), no rerank, no global-store lane. If the FTS index is unavailable
+// too, the original embed error is returned — an empty silent success would
+// hide a total outage.
+func (b *Brain) searchKeywordOnly(query string, limit int, subtypeFilter *string, embedErr error) ([]store.ScoredNode, error) {
+	if !b.store.FTSAvailable() {
+		return nil, fmt.Errorf("embedding query: %w (and FTS5 keyword index unavailable — no fallback lane)", embedErr)
+	}
+	fmt.Fprintf(os.Stderr, "cerebro: embedding provider unavailable (%v); falling back to keyword-only recall (no semantic ranking, project store only)\n", embedErr)
+	results, err := b.store.KeywordSearch(query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("keyword fallback: %w (after embed failure: %v)", err, embedErr)
+	}
+	results = b.store.RescoreKeywordOnly(results)
+	if limit > 0 && len(results) > limit {
+		results = results[:limit]
+	}
+	return filterScoredNodesBySubtype(results, subtypeFilter), nil
 }

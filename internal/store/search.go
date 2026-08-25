@@ -235,9 +235,13 @@ func compositeScore(n *Node, similarity, structural float64) float64 {
 	// Importance with access reinforcement
 	importance := n.Importance * (1.0 + math.Log1p(float64(n.AccessCount)))
 
-	// Recency: exponential decay from last access
-	hoursSinceAccess := time.Since(n.LastAccessed).Hours()
-	recency := math.Exp(-n.DecayRate * hoursSinceAccess)
+	// Recency: exponential decay from last access. DecayRate is a PER-DAY
+	// lambda (ADR-003's half-life table: episode 0.15 ~= 1-2 weeks). The
+	// pre-N2 code applied it per-hour — ~24x faster than documented intent,
+	// flooring the recency term for anything not touched today (C3 ruled
+	// "wire-lite": fix the units, keep the model).
+	daysSinceAccess := time.Since(n.LastAccessed).Hours() / 24
+	recency := math.Exp(-n.DecayRate * daysSinceAccess)
 
 	return 0.35*relevance + 0.25*importance + 0.25*recency + 0.15*structural
 }

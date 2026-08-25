@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Fixed [agentic-0p3w]
+
+- **`export --format sql` now emits edge `valid_at`/`invalid_at`.** The SQL text-dump edge emitter still wrote the pre-xtzn 5-column form, so a dump → replay silently reset every edge's bi-temporal window to NULL/NULL. Bounds emit in the storage layout (`2006-01-02 15:04:05`), never RFC3339, because the as-of predicate compares raw strings. Round-trip guard covers literal format, instant equality, live as-of semantics on the replayed store, and NULL preservation. [agentic-0p3w]
+
+### Added [agentic-zifu]
+
+- **Keyword-lane fallback when the embedder is unavailable.** A query-embed failure (e.g. Ollama down) no longer takes recall down with it: `Search`/`SearchWithGlobal` degrade to BM25 keyword-only recall with a one-line stderr notice. BM25 rank is the ranking signal; scores degrade to the importance+recency terms (`store.RescoreKeywordOnly`); subtype filtering holds; no expansion/rerank/global lane on the fallback path. If FTS is also unavailable the original embed error returns. The `none` provider still errors (configured-out is not a failure). [agentic-zifu]
+
+### Fixed [agentic-v5js]
+
+- **Decay is per-day, as ADR-003 documented — not per-hour.** `compositeScore` and the GC `retentionScore` applied the per-type λ to *hours* since access, ~24× faster than the ADR's half-life table (episode: 4.6 h instead of 1–2 weeks), flooring the recency term for anything not touched today. Both now apply λ per day. Same-session A/B on the 603-node eval brain: recall@5 0.7315 → **0.7685**, MRR 0.6072 → **0.6585**, recall@10/20 unchanged. The GC retention floor (importance ≥ 2×threshold is un-evictable) is now documented in-code as a deliberate safety property for a curated store. [agentic-v5js]
+- **Query-mode recall now generates the usage signal the scorer was designed around.** `recall`/`search` (query mode) touch `access_count`/`last_accessed` for returned nodes via a batched, best-effort `TouchAccessed` — after six months of live use every node's `access_count` was 0 because only explicit `reinforce` ever moved it. Prime mode still stamps `last_surfaced` only (a distinct signal, ADR-007), and the Go API's `Search` stays read-only so the eval harness cannot perturb the brain between A/B runs. [agentic-v5js]
+
+### Changed [agentic-t3c9]
+
+- **Recall-quality measurement is drift-proof.** The eval protocol now documents same-session disabled/enabled A/B pairs as the standard (the committed baseline is reference, never a gate — it drifts as the live brain grows), and `docs/evals/baseline.json` was regenerated on the released v3.0.0 binary at 603 nodes: the first production-binary eval (r@5 .7315, r@10 .8704, r@20 .9537, MRR .6072). [agentic-t3c9]
+
 ## [3.0.0] - 2026-08-25
 
 ### Changed [agentic-62uv]

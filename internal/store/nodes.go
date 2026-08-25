@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -595,4 +596,28 @@ func nullJSON(data json.RawMessage) sql.NullString {
 		return sql.NullString{}
 	}
 	return sql.NullString{String: string(data), Valid: true}
+}
+
+// TouchAccessed records retrieval usage for a batch of nodes: access_count
+// increments and last_accessed refreshes in one statement (N2 "wire-lite" —
+// the scoring model's reinforcement and recency terms were designed around a
+// usage signal that nothing generated; query-mode recall now supplies it).
+// Callers treat this as best-effort: a telemetry write must never fail or
+// slow a recall. Prime-mode surfacing deliberately does NOT call this — it
+// stamps last_surfaced instead (a distinct signal; ADR-007).
+func (s *Store) TouchAccessed(ids []string) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	placeholders := make([]string, len(ids))
+	args := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		args[i] = id
+	}
+	_, err := s.db.Exec(
+		`UPDATE nodes SET access_count = access_count + 1, last_accessed = CURRENT_TIMESTAMP WHERE id IN (`+strings.Join(placeholders, ",")+`)`,
+		args...,
+	)
+	return err
 }

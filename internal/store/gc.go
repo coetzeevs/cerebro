@@ -144,7 +144,13 @@ func (s *Store) GC(threshold float64, dryRun bool) (*GCResult, error) {
 // No similarity component — GC has no query vector.
 func retentionScore(n *Node) float64 {
 	importance := n.Importance * (1.0 + math.Log1p(float64(n.AccessCount)))
-	hoursSinceAccess := time.Since(n.LastAccessed).Hours()
-	recency := math.Exp(-n.DecayRate * hoursSinceAccess)
+	// Per-day lambda, mirroring compositeScore (N2 unit fix; ADR-003).
+	daysSinceAccess := time.Since(n.LastAccessed).Hours() / 24
+	recency := math.Exp(-n.DecayRate * daysSinceAccess)
+	// NOTE the deliberate floor: 0.5*importance means any node with
+	// importance >= 2*threshold can never be evicted regardless of age.
+	// At the default threshold (0.01) a default-importance (0.5) memory is
+	// un-evictable — a safety property for a curated store, not a bug:
+	// GC exists to reap explicitly low-importance ephemera.
 	return 0.5*importance + 0.5*recency
 }

@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-08-25
+
+### Changed [agentic-62uv]
+
+- **Go toolchain raised to `go 1.26.7`** (from 1.25.0), clearing all stdlib vulnerabilities flagged by govulncheck on main (the 8 pre-existing at go1.25.0 incl. crypto/x509 GO-2026-4866, plus 5 newer CVEs still affecting at the ticket's original 1.26.4 target) — verified 0 affecting at 1.26.7. CI and goreleaser inherit the pin via `go-version-file: go.mod`. [agentic-62uv]
+
 ### Added [agentic-lbjg]
 
 - **Structural provenance: a built-in `derived_from` relation.** Provenance is now structural, not freeform. A derived node (concept/procedure/reflection) can carry a built-in `derived_from` edge back to each source episode it was synthesized from. `derived_from` is reserved in code as a single exported Go constant (`store.RelationDerivedFrom`, re-exported as `brain.RelationDerivedFrom`); the typed-relation *registry* that seeds it on init is a separate ticket (agentic-8l2g). [agentic-lbjg]
@@ -66,6 +72,8 @@ All notable changes to this project will be documented in this file.
 
 - `cerebro eval` no longer silently writes an all-zero baseline when the target brain contains none of the ground-truth nodes (the "wrong `-p`" case). It now aborts with a clear non-zero error (`eval aborted: none of the ground-truth node IDs resolve as active nodes in the target brain …`) before writing anything. A second defence-in-depth guard refuses any zero-query baseline. New pure helper `countResolvableGroundTruth` covers the condition (unit + preflight-integration tests). [agentic-7r28]
 - `cerebro eval --out` now defaults to a gitignored scratch path (`docs/evals/baseline.local.json`) instead of the committed reference (`docs/evals/baseline.json`), so a bare `cerebro eval` can never clobber the committed baseline; updating the committed reference is now a deliberate `--out docs/evals/baseline.json`. [agentic-7r28]
+
+## [2.1.0] - 2026-06-05
 
 ### Added [agentic-x183]
 

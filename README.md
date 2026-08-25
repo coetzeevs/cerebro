@@ -22,8 +22,45 @@ AI coding agents lose context between sessions. Cerebro gives them durable memor
 ### Homebrew (macOS)
 
 ```bash
-brew install coetzeevs/tap/cerebro
+brew install --cask coetzeevs/tap/cerebro
 ```
+
+### Claude Code plugin (preferred for Claude Code users)
+
+With the CLI installed, add the plugin for lifecycle hooks (session-start
+recall priming, post-compaction recovery, session-end GC) and the
+`/cerebro:remember`, `/cerebro:recall`, `/cerebro:consolidate`,
+`/cerebro:develop`, `/cerebro:rules` skills:
+
+```
+/plugin marketplace add coetzeevs/cerebro
+/plugin install cerebro@cerebro
+```
+
+The plugin's hooks self-gate on a brain existing for the project (silent
+elsewhere) and are session-guarded in the binary, so running `cerebro init`
+in the same project is safe — each lifecycle event fires exactly once per
+session no matter how many paths registered it. `cerebro init` remains fully
+supported as the cross-tool fallback (it also appends behavioral rules to the
+project CLAUDE.md, which plugins cannot do; the plugin ships the same rules
+as the on-demand `/cerebro:rules` skill).
+
+The `cerebro stop-guard` premature-stop detector is **disabled by default**
+and wired by neither the plugin nor `cerebro init`. Enabling it is a
+deliberate two-step opt-in: set the brain config flag
+(`cerebro config set stop_guard_enabled true`) AND add a Stop hook to your
+own `.claude/settings.json`:
+
+```json
+"Stop": [{"matcher": "", "hooks": [{"type": "command",
+  "command": "cat | cerebro stop-guard -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"}]}]
+```
+
+Without the flag, a wired hook is inert (it always allows the stop without
+evaluating).
+
+Set `CEREBRO_ORIGIN_ACTOR` (e.g. `claude-code`) in your environment so
+memory writes are stamped with a recorded origin actor.
 
 ### From source
 

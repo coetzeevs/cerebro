@@ -49,6 +49,12 @@ var configRegistry = map[string]configParam{
 		Default:     "0.3",
 		Validate:    validateUnitFloat,
 	},
+	"stop_guard_enabled": {
+		Key:         "stop_guard_enabled",
+		Description: "Enable the stop-guard premature-stop detector (disabled by default; operator ruling 2026-08-25 — the hook must also be wired in settings.json)",
+		Default:     "false",
+		Validate:    validateBool,
+	},
 	"rerank_enabled": {
 		Key:         "rerank_enabled",
 		Description: "Enable local cross-encoder reranking of recall candidates (agentic-2ixw)",
@@ -425,6 +431,7 @@ func configRegistryKeys() []string {
 		"search_limit",
 		"search_threshold",
 		"recall_threshold",
+		"stop_guard_enabled",
 		"rerank_enabled",
 		"rerank_command",
 		"rerank_fusion",

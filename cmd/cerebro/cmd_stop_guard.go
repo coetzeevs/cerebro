@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/coetzeevs/cerebro/brain"
 	"github.com/spf13/cobra"
 )
 
@@ -19,11 +20,22 @@ func init() {
 message for patterns indicating premature stopping, and outputs a JSON
 decision to stdout.
 
+This is a premature-stop detector, NOT a memory-persistence mechanism: it
+writes nothing to the brain and only emits a stop/allow decision. Messages
+that stop to request human confirmation for an irreversible or outward-facing
+action (a push, a merge, a destructive apply) are always allowed through.
+
+DISABLED BY DEFAULT (operator ruling, 2026-08-25): the guard only evaluates
+when the brain config key stop_guard_enabled is the literal "true"
+(cerebro config set stop_guard_enabled true). Otherwise — unset, "false",
+any other value, or no resolvable brain — it always allows the stop without
+evaluating. Neither cerebro init nor the Claude Code plugin wires this hook;
+enabling it is a deliberate two-step opt-in (wire the hook AND set the flag).
+
 Designed to run as a Stop hook command in .claude/settings.json.
 Uses exit 0 + JSON decision protocol (omits decision field to allow stopping).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := evalStopGuard(os.Stdin, os.Stdout)
-			return err
+			return runStopGuardGated(resolveProjectDir(), os.Stdin, os.Stdout)
 		},
 		SilenceUsage: true,
 	}
@@ -91,6 +103,68 @@ func isExempt(msg string) bool {
 	return false
 }
 
+// Confirmation-gate detection (agentic-3xz9). A message that stops to request
+// human confirmation for an irreversible or outward-facing action must ALWAYS
+// be allowed through — the guard exists to catch lazy early-exits, never to
+// self-approve actions that need a human. Unlike permissionExemptions (which
+// only soften the permission-seeking category), this check runs FIRST, before
+// every category: a gate message that also happens to trip a premature-stop
+// pattern (e.g. "for now, I've held off on the push") is still a gate.
+//
+// A gate is: an explicit confirmation-request signal AND a risky-action signal
+// anywhere in the message, OR one of the standalone gate idioms.
+var gateRequestSignal = regexp.MustCompile(
+	`(?i)\b(confirm|confirmation|approv\w*|authoriz\w*|go-ahead|green.?light|sign.?off|awaiting your|waiting for your|need your|needs your|your (explicit )?go\b|ok to\b|permission)`)
+
+var gateRiskSignal = regexp.MustCompile(
+	`(?i)\b(push\w*|merge\w*|deploy\w*|apply(ing)?|applie[sd]|delet\w*|dropp?\w*|releas\w*|publish\w*|force\w*|reset\w*|destroy\w*|migrat\w*|rewrit\w*|irreversib\w*|permanent\w*|production|prod|overwrit\w*|purg\w*|revok\w*|tag\w*|rebas\w*)\b`)
+
+var gateIdioms = []*regexp.Regexp{
+	// The delivery-discipline decisions block: an enumerated ask is a gate.
+	regexp.MustCompile(`(?i)\bdecisions? required\b`),
+	// Blocked on something only the human can provide (credential, decision,
+	// interactive auth) — stopping is the only correct move.
+	regexp.MustCompile(`(?is)\bblocked on\b.{0,120}\bonly you\b`),
+	regexp.MustCompile(`(?i)\bmust run interactively\b|\brequires? (an? )?(interactive|human)\b`),
+	// Named gate: "the push gate", "stopping at the approval gate".
+	regexp.MustCompile(`(?i)\b(push|merge|approval|confirmation|release|deploy) gate\b`),
+}
+
+// isConfirmationGate reports whether msg stops to request a human decision on
+// an irreversible/outward action.
+func isConfirmationGate(msg string) bool {
+	if gateRequestSignal.MatchString(msg) && gateRiskSignal.MatchString(msg) {
+		return true
+	}
+	for _, pat := range gateIdioms {
+		if pat.MatchString(msg) {
+			return true
+		}
+	}
+	return false
+}
+
+// runStopGuardGated is the command entrypoint: the guard is an OPT-IN
+// feature behind the brain config flag stop_guard_enabled (strict — only the
+// literal "true" enables it, mirroring the rerank_enabled gate). Disabled or
+// unresolvable-brain cases emit the allow decision without evaluating: the
+// fail-open direction here is fail-SAFE, because the guard's only power is to
+// force continuation, and forcing continuation is the harm being ruled out.
+func runStopGuardGated(projectDir string, r io.Reader, w io.Writer) error {
+	enabled := false
+	if b, err := brain.Open(brain.ProjectPath(projectDir)); err == nil {
+		val, _ := b.GetMeta("config.stop_guard_enabled")
+		_ = b.Close()
+		enabled = val == "true"
+	}
+	if !enabled {
+		_, err := fmt.Fprintln(w, "{}")
+		return err
+	}
+	_, err := evalStopGuard(r, w)
+	return err
+}
+
 // evalStopGuard reads hook input from r, evaluates the last assistant message
 // against known premature-stop patterns, and writes a JSON decision to w.
 // Returns the matched category name (empty string if no match / allowed).
@@ -114,6 +188,14 @@ func evalStopGuard(r io.Reader, w io.Writer) (string, error) {
 	}
 
 	msg := strings.TrimSpace(input.LastAssistantMessage)
+
+	// Confirmation gates are checked FIRST and win over every category
+	// (agentic-3xz9): a stop that requests human confirmation for an
+	// irreversible or outward-facing action is always allowed.
+	if msg != "" && isConfirmationGate(msg) {
+		_, err = fmt.Fprintln(w, "{}")
+		return "", err
+	}
 
 	// Check each category in order; first match wins.
 	for _, cat := range stopCategories {

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added [agentic-k7dv]
+
+- **Claude Code plugin.** `claude-plugin/cerebro/` ships the cerebro plugin: lifecycle hooks (session-start recall priming, post-compaction recovery, session-end GC) and the namespaced skills `/cerebro:remember`, `/cerebro:recall`, `/cerebro:consolidate`, `/cerebro:develop`, plus `/cerebro:rules` (the behavioral rules `cerebro init` appends to CLAUDE.md, loadable on demand since plugins cannot auto-load CLAUDE.md). A repo-root `.claude-plugin/marketplace.json` makes it installable via `/plugin marketplace add coetzeevs/cerebro` → `/plugin install cerebro@cerebro`. Plugin hooks self-gate on a brain existing for the project (silent elsewhere). The `stop-guard` Stop hook is deliberately NOT wired by the plugin (no per-hook disable exists in the plugin system; opt in via your own settings.json). `cerebro init` continues unchanged as the cross-tool fallback; its templates, README, and stdout now reference the plugin as the preferred Claude Code path. A lockstep test guards the plugin skills against drifting from the embedded init templates. [agentic-k7dv]
+- **`cerebro hook prime|post-compact|session-end` — session-guarded lifecycle subcommands.** If both `cerebro init` hooks AND the plugin register the same lifecycle events, each event still fires its work exactly once per session: the binary records per-session-id state at `~/.cerebro/session-state/<session-id>.json` (session id from `$CLAUDE_SESSION_ID`) and no-ops repeats. `post-compact` clears the primed flag so the next prime re-fires (post-compaction context recovery); state files older than 7 days are reaped lazily on any write. Both the plugin's hooks and `cerebro init`'s settings template now route through these guarded commands. [agentic-k7dv]
+- **Origin identity flows through the integration surfaces.** The `remember`/`consolidate` skill templates stamp writes with `CEREBRO_ORIGIN_ACTOR` (default `claude-code`) and `--origin-channel skill`, so agent-written memories classify `recorded`; documented in the CLAUDE.md template and README. [agentic-k7dv]
+
+### Added [agentic-eq7a]
+
+- **`cerebro consolidate --suggest [--limit N]` — consolidation candidate selection.** Surfaces rollup candidates (active episodes grouped by subtype, biggest groups first, oldest first within a group; group counts stay exact when the listing truncates) so the agent can synthesize concepts/procedures/reflections and consolidate each cluster with the existing atomic `--into` (derived_from provenance + source marking in one transaction). Model B throughout: the agent synthesizes, cerebro selects and wires. The `consolidate` skill template now uses the atomic `--into` instead of manual `learned_from` edges + `mark-consolidated`, and teaches the relation-registry discipline for new edge relations. Live A/B on the 604-node eval brain (18 queries, same-session pair): a real 3-episode consolidation pass left recall@10/20 unchanged and improved recall@5 0.7685 → 0.8426 (MRR 0.6585 → 0.6326). [agentic-eq7a]
+
+### Fixed [agentic-3xz9]
+
+- **`stop-guard` no longer forces continuation past legitimate human-confirmation gates.** A first-class confirmation-gate detector now runs BEFORE every premature-stop category: a message that stops to request human confirmation for an irreversible or outward-facing action (push, merge, deploy, destructive apply, delete) is always allowed through — even when it also matches a premature-stop pattern (the exact defect: "for now, I've held off on the force-push" was classified as scope-reduction and blocked). Fixture suite covers both classes with real phrasings, including the EDP estate's "never push without confirming" gate messages and the delivery-discipline "Decisions required" shape. Help text now states the guard is a premature-stop detector, not a memory-persistence mechanism. [agentic-3xz9]
+
+### Changed [agentic-3xz9]
+
+- **`stop-guard` is now disabled by default, everywhere** (operator ruling 2026-08-25: the blocking proved inefficient and its matching overly strict in live use). The guard evaluates only when the brain config flag `stop_guard_enabled` is the literal `"true"` (`cerebro config set stop_guard_enabled true` — strict opt-in mirroring the `rerank_enabled` gate); otherwise, and when no brain resolves, it emits the allow decision without evaluating. Fail-open here is fail-safe: the guard's only power is to force continuation, which is exactly the harm being ruled out. The Stop hook is no longer wired by `cerebro init` (its settings template drops the entry; `cerebro init --force` removes it from previously scaffolded projects) nor by the plugin. Enabling is a deliberate two-step opt-in: wire the Stop hook manually AND set the flag. [agentic-3xz9]
+
 ## [3.2.0] - 2026-08-25
 
 ### Added [agentic-goc7]

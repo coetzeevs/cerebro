@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-08-25
+
 ### Added [agentic-k7dv]
 
 - **Claude Code plugin.** `claude-plugin/cerebro/` ships the cerebro plugin: lifecycle hooks (session-start recall priming, post-compaction recovery, session-end GC) and the namespaced skills `/cerebro:remember`, `/cerebro:recall`, `/cerebro:consolidate`, `/cerebro:develop`, plus `/cerebro:rules` (the behavioral rules `cerebro init` appends to CLAUDE.md, loadable on demand since plugins cannot auto-load CLAUDE.md). A repo-root `.claude-plugin/marketplace.json` makes it installable via `/plugin marketplace add coetzeevs/cerebro` → `/plugin install cerebro@cerebro`. Plugin hooks self-gate on a brain existing for the project (silent elsewhere). The `stop-guard` Stop hook is deliberately NOT wired by the plugin (no per-hook disable exists in the plugin system; opt in via your own settings.json). `cerebro init` continues unchanged as the cross-tool fallback; its templates, README, and stdout now reference the plugin as the preferred Claude Code path. A lockstep test guards the plugin skills against drifting from the embedded init templates. [agentic-k7dv]

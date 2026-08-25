@@ -178,3 +178,23 @@ func normaliseBM25Signal(results []ScoredNode, rawScores []float64) {
 		results[i].Similarity = norm
 	}
 }
+
+// FTSAvailable reports whether the FTS5 keyword index is usable in this build
+// and store. Exported for the brain layer's embedder-failure fallback (N3):
+// keyword-only recall is offered only when the lane can actually answer.
+func (s *Store) FTSAvailable() bool {
+	return s.ftsAvailable()
+}
+
+// RescoreKeywordOnly stamps composite scores onto keyword-lane results for the
+// embedder-failure fallback: similarity and structural are unavailable (no
+// query vector, no expansion), so each Score degrades to the importance and
+// recency terms only. Ordering is NOT changed — BM25 rank remains the ranking
+// signal, mirroring the fusion contract where the keyword lane contributes
+// rank, not score.
+func (s *Store) RescoreKeywordOnly(results []ScoredNode) []ScoredNode {
+	for i := range results {
+		results[i].Score = compositeScore(&results[i].Node, 0, 0)
+	}
+	return results
+}

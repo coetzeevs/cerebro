@@ -45,8 +45,8 @@ func TestFreshInitHasValidityColumnsAtV4(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 on fresh Init, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 on fresh Init, got %q", ver)
 	}
 
 	cols := edgeColumns(t, s)
@@ -140,8 +140,8 @@ func TestMigrationFromV3AddsValidityColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta after migration: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after v3->v4->v5 ladder, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after v3->v4->v5 ladder, got %q", ver)
 	}
 
 	cols := edgeColumns(t, s2)
@@ -185,8 +185,8 @@ func TestMigrationFromV3Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after idempotent re-open, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after idempotent re-open, got %q", ver)
 	}
 }
 
@@ -226,8 +226,8 @@ func TestMigrationV3ToV4SelfHealsExistingColumns(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after self-heal, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after self-heal, got %q", ver)
 	}
 	cols := edgeColumns(t, s2)
 	if !cols["valid_at"] || !cols["invalid_at"] {
@@ -257,8 +257,8 @@ func TestMigrationFromV1ReachesV4(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after full ladder, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after full ladder, got %q", ver)
 	}
 	cols := edgeColumns(t, s2)
 	if !cols["valid_at"] || !cols["invalid_at"] {

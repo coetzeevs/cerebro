@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const schemaVersion = "5"
+const schemaVersion = "6"
 
 // applySchema creates all tables and indexes if they don't exist.
 func (s *Store) applySchema() error {
@@ -40,7 +40,13 @@ func (s *Store) applySchema() error {
 			-- (agentic-lbjg). 0/1 integer flag (SQLite has no native BOOLEAN);
 			-- NOT NULL DEFAULT 0 so existing rows backfill to 0 on the v4->v5
 			-- ALTER and a flagless add defaults to 0.
-			provenance_root INTEGER NOT NULL DEFAULT 0
+			provenance_root INTEGER NOT NULL DEFAULT 0,
+			-- Origin identity (agentic-goc7): who/what wrote the memory,
+			-- via which channel, session, host. NULL = not recorded.
+			origin_actor TEXT,
+			origin_channel TEXT,
+			origin_session TEXT,
+			origin_host TEXT
 		)`,
 
 		// Relationship edges. valid_at/invalid_at carry the bi-temporal
@@ -90,6 +96,16 @@ func (s *Store) applySchema() error {
 		`CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_edges_relation ON edges(relation)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_origin_actor ON nodes(origin_actor)`,
+		`CREATE INDEX IF NOT EXISTS idx_nodes_origin_host ON nodes(origin_host)`,
+		// Typed-relation registry (agentic-8l2g): warn-not-error ontology
+		// discipline for edge relations. Seeded with the built-ins below.
+		`CREATE TABLE IF NOT EXISTS relations (
+			name TEXT PRIMARY KEY,
+			traversal_class TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
+		`INSERT OR IGNORE INTO relations (name) VALUES ('derived_from'), ('supports'), ('contradicts'), ('supersedes')`,
 	}
 
 	for _, stmt := range stmts {
@@ -129,6 +145,16 @@ func (s *Store) applySchema() error {
 		MetaProvenanceConventionSince, time.Now().UTC().Format(storageTimeLayout),
 	); err != nil {
 		return fmt.Errorf("setting provenance convention boundary: %w", err)
+	}
+
+	// Origin convention boundary (agentic-goc7). Same one-time-stamp discipline
+	// as the provenance boundary above: fresh v6 brains stamp at birth, migrated
+	// brains were stamped inside the v5->v6 tx, INSERT OR IGNORE never re-stamps.
+	if _, err := s.db.Exec(
+		`INSERT OR IGNORE INTO schema_meta (key, value) VALUES (?, ?)`,
+		MetaOriginConventionSince, time.Now().UTC().Format(storageTimeLayout),
+	); err != nil {
+		return fmt.Errorf("setting origin convention boundary: %w", err)
 	}
 
 	return nil
@@ -424,9 +450,73 @@ func (s *Store) migrateSchema() error {
 		version = "5"
 	}
 
+	// v5 -> v6: origin identity (agentic-goc7) + typed-relation registry
+	// (agentic-8l2g). Four nullable TEXT origin columns on nodes (plain ADD
+	// COLUMN, no default needed — NULL means "not recorded", which is exactly
+	// right for every pre-existing row), the relations registry table with its
+	// built-in seeds, supporting indexes, and the origin convention boundary
+	// stamped at the migration instant so pre-existing nodes classify "legacy".
+	// Open() runs migrations only (applySchema is Init-only), so this block
+	// must create everything a v6 brain needs — it cannot lean on the fresh-DDL
+	// list. Same tx-guarded, txColumnExists-self-healing idiom as v4->v5.
+	if version == "5" {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("beginning v5->v6 migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		for _, col := range []string{"origin_actor", "origin_channel", "origin_session", "origin_host"} {
+			has, err := txColumnExists(tx, "nodes", col)
+			if err != nil {
+				return fmt.Errorf("checking nodes.%s before v5->v6 migration: %w", col, err)
+			}
+			if has {
+				continue
+			}
+			if _, err := tx.Exec(`ALTER TABLE nodes ADD COLUMN ` + col + ` TEXT`); err != nil {
+				return fmt.Errorf("migrating v5->v6 (add %s): %w", col, err)
+			}
+		}
+
+		for _, stmt := range []string{
+			`CREATE TABLE IF NOT EXISTS relations (
+				name TEXT PRIMARY KEY,
+				traversal_class TEXT,
+				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+			)`,
+			`INSERT OR IGNORE INTO relations (name) VALUES ('derived_from'), ('supports'), ('contradicts'), ('supersedes')`,
+			`CREATE INDEX IF NOT EXISTS idx_nodes_origin_actor ON nodes(origin_actor)`,
+			`CREATE INDEX IF NOT EXISTS idx_nodes_origin_host ON nodes(origin_host)`,
+		} {
+			if _, err := tx.Exec(stmt); err != nil {
+				return fmt.Errorf("migrating v5->v6 (relations/indexes): %w", err)
+			}
+		}
+
+		if _, err := tx.Exec(
+			`INSERT OR IGNORE INTO schema_meta (key, value) VALUES (?, ?)`,
+			MetaOriginConventionSince, time.Now().UTC().Format(storageTimeLayout),
+		); err != nil {
+			return fmt.Errorf("migrating v5->v6 (set origin boundary): %w", err)
+		}
+
+		if _, err := tx.Exec(
+			`INSERT INTO schema_meta (key, value) VALUES ('schema_version', '6')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		); err != nil {
+			return fmt.Errorf("updating schema version to 6: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing v5->v6 migration: %w", err)
+		}
+		version = "6"
+	}
+
 	// version is intentionally re-assigned above for clarity and to keep each
 	// migration block self-contained; the value is consumed only by subsequent
-	// blocks (none follow v5 today).
+	// blocks (none follow v6 today).
 	_ = version
 
 	return nil

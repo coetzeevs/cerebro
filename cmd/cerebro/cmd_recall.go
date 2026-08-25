@@ -170,6 +170,7 @@ func outputScoredListWithProvenance(b *brain.Brain, nodes []store.ScoredNode, wi
 			out[i] = scoredNodeWithProvenance{
 				ScoredNode:       nodes[i],
 				ProvenanceStatus: statuses[nodes[i].ID],
+				OriginStatus:     b.OriginStatus(&nodes[i].Node),
 			}
 			if withProvenance {
 				walk, err := b.WalkProvenance(nodes[i].ID, depth)

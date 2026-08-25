@@ -27,8 +27,8 @@ func TestInitAndOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6, got %q", ver)
 	}
 
 	_ = s.Close()
@@ -100,10 +100,10 @@ func TestInit_ReInitOnV1Schema(t *testing.T) {
 	defer func() { _ = s.Close() }()
 
 	// Verify migration happened: updated_at column should exist and the version
-	// advanced to the current schema version (5, after the lbjg provenance_root bump).
+	// advanced to the current schema version (6, after the goc7 origin bump).
 	ver, _ := s.GetMeta("schema_version")
-	if ver != "5" {
-		t.Errorf("expected schema_version=5 after re-init, got %q", ver)
+	if ver != "6" {
+		t.Errorf("expected schema_version=6 after re-init, got %q", ver)
 	}
 }
 

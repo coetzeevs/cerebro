@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -55,7 +56,8 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			n.id, n.type, n.subtype, n.content, n.metadata, n.importance, n.decay_rate,
 			n.access_count, n.times_reinforced, n.status, n.embedding_model,
 			n.created_at, n.last_accessed, n.last_reinforced,
-			n.updated_at, n.last_surfaced
+			n.updated_at, n.last_surfaced,
+			n.origin_actor, n.origin_channel, n.origin_session, n.origin_host
 		FROM (
 			SELECT node_id, distance
 			FROM vec_nodes
@@ -79,6 +81,7 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		var nodeID string
 		var distance float64
 		var subtype, metadata, lastReinf, updatedAt, lastSurfaced interface{}
+		var originActor, originChannel, originSession, originHost sql.NullString
 
 		err := rows.Scan(
 			&nodeID, &distance,
@@ -86,6 +89,7 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			&sn.AccessCount, &sn.TimesReinforced, &sn.Status, &sn.EmbeddingModel,
 			&sn.CreatedAt, &sn.LastAccessed, &lastReinf,
 			&updatedAt, &lastSurfaced,
+			&originActor, &originChannel, &originSession, &originHost,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scanning search result: %w", err)
@@ -94,6 +98,10 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 		if s, ok := subtype.(string); ok {
 			sn.Subtype = s
 		}
+		sn.OriginActor = originActor.String
+		sn.OriginChannel = originChannel.String
+		sn.OriginSession = originSession.String
+		sn.OriginHost = originHost.String
 		if m, ok := metadata.(string); ok {
 			sn.Metadata = []byte(m)
 		}

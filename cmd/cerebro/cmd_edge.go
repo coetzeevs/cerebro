@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/coetzeevs/cerebro/brain"
 	"github.com/spf13/cobra"
@@ -77,6 +78,13 @@ func runEdge(cmd *cobra.Command, args []string) error {
 	targetID, err := resolveID(b, args[1])
 	if err != nil {
 		return fmt.Errorf("resolving target ID: %w", err)
+	}
+
+	// Advisory registry check (agentic-8l2g): an unregistered relation warns on
+	// stderr but never blocks — the registry names expectations, not law. The
+	// check is fail-open: a lookup error stays silent rather than blocking.
+	if registered, regErr := b.RelationRegistered(args[2]); regErr == nil && !registered {
+		fmt.Fprintf(os.Stderr, "warning: relation %q is not registered — register it with `cerebro relation add %s` or check for a typo\n", args[2], args[2])
 	}
 
 	// AddEdge returns the PERSISTED id via RETURNING id, so on a re-add (upsert)

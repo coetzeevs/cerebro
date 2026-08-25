@@ -84,6 +84,7 @@ func runGet(cmd *cobra.Command, args []string) error {
 		out := nodeWithProvenance{
 			NodeWithEdges:    nwe,
 			ProvenanceStatus: provenanceStatusFor(b, id),
+			OriginStatus:     b.OriginStatus(&nwe.Node),
 		}
 		if withProvenance {
 			out.Provenance = chain

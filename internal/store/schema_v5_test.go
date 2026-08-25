@@ -46,8 +46,8 @@ func TestFreshInitHasProvenanceRootAtV5(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 on fresh Init, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 on fresh Init, got %q", ver)
 	}
 
 	if !nodeColumns(t, s)["provenance_root"] {
@@ -157,8 +157,8 @@ func TestMigrationFromV4AddsProvenanceRoot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta after migration: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after v4->v5 migration, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after v4->v5 migration, got %q", ver)
 	}
 	if !nodeColumns(t, s2)["provenance_root"] {
 		t.Fatalf("v4->v5 migration did not add provenance_root")
@@ -215,8 +215,8 @@ func TestMigrationFromV4Idempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after idempotent re-open, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after idempotent re-open, got %q", ver)
 	}
 	// The boundary must NOT be re-stamped on re-open (it is a one-time instant).
 	since2, _ := s2.GetMeta(MetaProvenanceConventionSince)
@@ -258,8 +258,8 @@ func TestMigrationV4ToV5SelfHealsExistingColumn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after self-heal, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after self-heal, got %q", ver)
 	}
 	if !nodeColumns(t, s2)["provenance_root"] {
 		t.Fatalf("self-heal lost provenance_root column")
@@ -288,8 +288,8 @@ func TestMigrationFromV1ReachesV5(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMeta: %v", err)
 	}
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after full ladder, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after full ladder, got %q", ver)
 	}
 	if !nodeColumns(t, s2)["provenance_root"] {
 		t.Fatalf("full ladder did not add provenance_root column")

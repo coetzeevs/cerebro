@@ -122,10 +122,11 @@ func (s *Store) AddNodeWithID(id string, opts *AddNodeOpts) error {
 	}
 
 	_, err := s.db.Exec(`
-		INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, embedding_model)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, embedding_model, origin_actor, origin_channel, origin_session, origin_host)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		id, opts.Type, nullString(opts.Subtype), opts.Content, nullJSON(opts.Metadata),
 		importance, decayRate, opts.EmbeddingModel,
+		nullString(opts.OriginActor), nullString(opts.OriginChannel), nullString(opts.OriginSession), nullString(opts.OriginHost),
 	)
 	if err != nil {
 		return fmt.Errorf("inserting node with id: %w", err)
@@ -162,13 +163,13 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 	case ConflictReplace:
 		insertSQL = `INSERT OR REPLACE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate,
 			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-			updated_at, last_surfaced, provenance_root)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			updated_at, last_surfaced, provenance_root, origin_actor, origin_channel, origin_session, origin_host)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	default: // skip
 		insertSQL = `INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate,
 			access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced,
-			updated_at, last_surfaced, provenance_root)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+			updated_at, last_surfaced, provenance_root, origin_actor, origin_channel, origin_session, origin_host)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	}
 
 	nodeStmt, err := tx.Prepare(insertSQL)
@@ -189,6 +190,14 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 		if n.LastSurfaced != nil {
 			lastSurfaced = n.LastSurfaced.UTC().Format(time.RFC3339)
 		}
+		// Origin of entry is never silently blank (agentic-goc7): a bundle node
+		// that carries no recorded actor arrived here THROUGH an import, so the
+		// import itself is stamped as actor/channel. A recorded origin is
+		// carried through untouched.
+		originActor, originChannel := n.OriginActor, n.OriginChannel
+		if originActor == "" {
+			originActor, originChannel = "import", "import"
+		}
 
 		res, err := nodeStmt.Exec(
 			n.ID, n.Type, nullString(n.Subtype), n.Content, nullJSON(n.Metadata),
@@ -200,6 +209,8 @@ func (s *Store) Import(bundle *ExportBundle, opts ImportOptions) (*ImportResult,
 			updatedAt,
 			lastSurfaced,
 			boolToInt(n.ProvenanceRoot),
+			nullString(originActor), nullString(originChannel),
+			nullString(n.OriginSession), nullString(n.OriginHost),
 		)
 		if err != nil {
 			return nil, fmt.Errorf("importing node %s: %w", n.ID, err)
@@ -306,8 +317,14 @@ func (s *Store) ExportSQL(w io.Writer) error {
 		if n.LastSurfaced != nil {
 			lastSurfaced = fmt.Sprintf("'%s'", n.LastSurfaced.UTC().Format(time.RFC3339))
 		}
+		sqlNullable := func(v string) string {
+			if v == "" {
+				return "NULL"
+			}
+			return fmt.Sprintf("'%s'", sqlEscape(v))
+		}
 		if _, err := fmt.Fprintf(w,
-			"INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced, updated_at, last_surfaced, provenance_root) VALUES ('%s', '%s', %s, '%s', %s, %f, %f, %d, %d, '%s', '%s', '%s', '%s', %s, %s, %s, %d);\n",
+			"INSERT OR IGNORE INTO nodes (id, type, subtype, content, metadata, importance, decay_rate, access_count, times_reinforced, status, embedding_model, created_at, last_accessed, last_reinforced, updated_at, last_surfaced, provenance_root, origin_actor, origin_channel, origin_session, origin_host) VALUES ('%s', '%s', %s, '%s', %s, %f, %f, %d, %d, '%s', '%s', '%s', '%s', %s, %s, %s, %d, %s, %s, %s, %s);\n",
 			sqlEscape(n.ID), n.Type, subtype, sqlEscape(n.Content), metadata,
 			n.Importance, n.DecayRate, n.AccessCount, n.TimesReinforced,
 			n.Status, sqlEscape(n.EmbeddingModel),
@@ -317,6 +334,8 @@ func (s *Store) ExportSQL(w io.Writer) error {
 			updatedAt,
 			lastSurfaced,
 			boolToInt(n.ProvenanceRoot),
+			sqlNullable(n.OriginActor), sqlNullable(n.OriginChannel),
+			sqlNullable(n.OriginSession), sqlNullable(n.OriginHost),
 		); err != nil {
 			return err
 		}

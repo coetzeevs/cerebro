@@ -164,8 +164,8 @@ func TestGetAllMeta(t *testing.T) {
 		t.Errorf("expected key2=val2, got %q", meta["key2"])
 	}
 	// schema_version is set by Init (5 after the lbjg provenance_root bump, agentic-lbjg)
-	if meta["schema_version"] != "5" {
-		t.Errorf("expected schema_version=5, got %q", meta["schema_version"])
+	if meta["schema_version"] != "6" {
+		t.Errorf("expected schema_version=6, got %q", meta["schema_version"])
 	}
 }
 

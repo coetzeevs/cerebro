@@ -30,6 +30,32 @@ neighbour cache) should be run through this harness before and after to prove im
 All metric values are in `[0.0, 1.0]`. The harness reports recall@5, recall@10, and recall@20
 from a single `Brain.Search(limit=20)` call per query (prefix slice).
 
+## Measurement protocol: same-session A/B is the standard [agentic-t3c9]
+
+The committed `baseline.json` **drifts**: it was captured at a point-in-time node count,
+and the live brain grows. During `agentic-2ixw` the committed floor (captured at 538 nodes)
+became unreachable by *any* code path on the then-549-node brain — including the disabled
+path — so comparing against it read as a false regression. A committed floor on a living
+brain is a moving target and MUST NOT gate a change.
+
+**The rule (per agentic-t3c9, option (c)):** every recall-quality change is judged by a
+**contemporaneous same-session pair** on the same brain:
+
+1. Run the harness with the feature **disabled** (via its config seam — e.g.
+   `bm25_enabled false`, `rerank_enabled false`, `expand_threshold 0.0`) →
+   `--out /tmp/eval-disabled.json`.
+2. Run it again with the feature **enabled** → `--out /tmp/eval-enabled.json`.
+3. Judge the **delta** between the two runs. The brain is identical in both, so the only
+   variable is the change under test.
+
+This is the protocol the shipped feature evals actually used (`bm25-results.md`,
+`rerank-results.md`, `lazy-gating-results.md`); it is now the documented standard.
+
+**The committed `baseline.json` is a historical reference, not a gate.** Opportunistically
+regenerate it at the start of a recall-quality ticket (option (a)) so the reference stays
+near-current — and record the brain's node count alongside, since numbers are only
+comparable at comparable corpus sizes.
+
 ## Scorer formula being measured
 
 ```

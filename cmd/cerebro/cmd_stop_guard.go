@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/coetzeevs/cerebro/brain"
 	"github.com/spf13/cobra"
 )
 
@@ -24,11 +25,17 @@ writes nothing to the brain and only emits a stop/allow decision. Messages
 that stop to request human confirmation for an irreversible or outward-facing
 action (a push, a merge, a destructive apply) are always allowed through.
 
+DISABLED BY DEFAULT (operator ruling, 2026-08-25): the guard only evaluates
+when the brain config key stop_guard_enabled is the literal "true"
+(cerebro config set stop_guard_enabled true). Otherwise — unset, "false",
+any other value, or no resolvable brain — it always allows the stop without
+evaluating. Neither cerebro init nor the Claude Code plugin wires this hook;
+enabling it is a deliberate two-step opt-in (wire the hook AND set the flag).
+
 Designed to run as a Stop hook command in .claude/settings.json.
 Uses exit 0 + JSON decision protocol (omits decision field to allow stopping).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			_, err := evalStopGuard(os.Stdin, os.Stdout)
-			return err
+			return runStopGuardGated(resolveProjectDir(), os.Stdin, os.Stdout)
 		},
 		SilenceUsage: true,
 	}
@@ -135,6 +142,27 @@ func isConfirmationGate(msg string) bool {
 		}
 	}
 	return false
+}
+
+// runStopGuardGated is the command entrypoint: the guard is an OPT-IN
+// feature behind the brain config flag stop_guard_enabled (strict — only the
+// literal "true" enables it, mirroring the rerank_enabled gate). Disabled or
+// unresolvable-brain cases emit the allow decision without evaluating: the
+// fail-open direction here is fail-SAFE, because the guard's only power is to
+// force continuation, and forcing continuation is the harm being ruled out.
+func runStopGuardGated(projectDir string, r io.Reader, w io.Writer) error {
+	enabled := false
+	if b, err := brain.Open(brain.ProjectPath(projectDir)); err == nil {
+		val, _ := b.GetMeta("config.stop_guard_enabled")
+		_ = b.Close()
+		enabled = val == "true"
+	}
+	if !enabled {
+		_, err := fmt.Fprintln(w, "{}")
+		return err
+	}
+	_, err := evalStopGuard(r, w)
+	return err
 }
 
 // evalStopGuard reads hook input from r, evaluates the last assistant message

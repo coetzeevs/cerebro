@@ -103,4 +103,11 @@ func TestInitSettingsTemplate_UsesGuardedHookCommands(t *testing.T) {
 			t.Errorf("init settings template missing guarded command %q", want)
 		}
 	}
+	// Operator ruling 2026-08-25: the stop-guard ships un-wired everywhere —
+	// neither the plugin (see TestPluginHooks_ShapeAndNoStopHook) nor init
+	// registers the Stop hook. Enabling it is a deliberate two-step opt-in
+	// (wire the hook manually AND set stop_guard_enabled=true).
+	if strings.Contains(s, "\"Stop\"") || strings.Contains(s, "stop-guard") {
+		t.Error("init settings template must NOT wire the Stop hook (operator ruling: stop-guard is opt-in)")
+	}
 }

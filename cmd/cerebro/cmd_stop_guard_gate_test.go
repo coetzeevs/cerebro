@@ -15,7 +15,13 @@ package main
 // Fixtures are real phrasings: the EDP estate's standing rules ("never push
 // without confirming") and actual gate messages produced by agent sessions.
 
-import "testing"
+import (
+	"bytes"
+	"encoding/json"
+	"testing"
+
+	"github.com/coetzeevs/cerebro/brain"
+)
 
 // Gate class: every one of these stops to request a human decision on an
 // irreversible/outward action and MUST be allowed (no decision field).
@@ -74,5 +80,63 @@ func TestStopGuard_GateAndStopHookActiveBothAllow(t *testing.T) {
 	decision := runStopGuard(t, []byte(`{"last_assistant_message": "Shall I continue?", "stop_hook_active": true}`))
 	if decision.Decision != "" {
 		t.Errorf("stop_hook_active safety valve broken: %q", decision.Decision)
+	}
+}
+
+// ---- operator ruling 2026-08-25: stop-guard is DISABLED BY DEFAULT ----
+// The guard only evaluates when brain config stop_guard_enabled == "true"
+// (strict, mirroring the rerank_enabled opt-in gate). Unset, "false", any
+// other value, or no resolvable brain → always allow, no evaluation.
+
+func TestStopGuardGate_DisabledByDefault(t *testing.T) {
+	projectDir := setupAddTest(t)
+	lazy := []byte(`{"last_assistant_message": "Shall I continue with the implementation?"}`)
+
+	var out bytes.Buffer
+	if err := runStopGuardGated(projectDir, bytes.NewReader(lazy), &out); err != nil {
+		t.Fatalf("runStopGuardGated: %v", err)
+	}
+	var d stopHookDecision
+	if err := json.Unmarshal(out.Bytes(), &d); err != nil {
+		t.Fatalf("output not JSON: %v (%q)", err, out.String())
+	}
+	if d.Decision != "" {
+		t.Errorf("guard evaluated while disabled (default): got %q", d.Decision)
+	}
+}
+
+func TestStopGuardGate_OptInEnables(t *testing.T) {
+	projectDir := setupAddTest(t)
+	b, err := brain.Open(brain.ProjectPath(projectDir))
+	if err != nil {
+		t.Fatalf("brain.Open: %v", err)
+	}
+	if err := b.SetMeta("config.stop_guard_enabled", "true"); err != nil {
+		t.Fatalf("SetMeta: %v", err)
+	}
+	_ = b.Close()
+
+	lazy := []byte(`{"last_assistant_message": "Shall I continue with the implementation?"}`)
+	var out bytes.Buffer
+	if err := runStopGuardGated(projectDir, bytes.NewReader(lazy), &out); err != nil {
+		t.Fatalf("runStopGuardGated: %v", err)
+	}
+	var d stopHookDecision
+	_ = json.Unmarshal(out.Bytes(), &d)
+	if d.Decision != "block" {
+		t.Errorf("opted-in guard must evaluate: got %q", d.Decision)
+	}
+}
+
+func TestStopGuardGate_NoBrainAllows(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	var out bytes.Buffer
+	if err := runStopGuardGated(t.TempDir(), bytes.NewReader([]byte(`{"last_assistant_message": "Shall I continue?"}`)), &out); err != nil {
+		t.Fatalf("runStopGuardGated must not error without a brain: %v", err)
+	}
+	var d stopHookDecision
+	_ = json.Unmarshal(out.Bytes(), &d)
+	if d.Decision != "" {
+		t.Errorf("no-brain case must allow: got %q", d.Decision)
 	}
 }

@@ -292,6 +292,16 @@ func (b *Brain) ProvenanceStatus(ids []string) (map[string]string, error) {
 	return b.store.ProvenanceStatusBatch(ids)
 }
 
+// SetMeta writes a schema_meta key (used by config and feature gates).
+func (b *Brain) SetMeta(key, value string) error {
+	return b.store.SetMeta(key, value)
+}
+
+// GetMeta reads a schema_meta key; missing keys return an empty string.
+func (b *Brain) GetMeta(key string) (string, error) {
+	return b.store.GetMeta(key)
+}
+
 // RegisterRelation records a relation name (with an optional traversal class)
 // in the typed-relation registry — agentic-8l2g. Idempotent.
 func (b *Brain) RegisterRelation(name, class string) error {

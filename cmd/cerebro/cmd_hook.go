@@ -26,8 +26,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
+	"github.com/coetzeevs/cerebro/brain"
 	"github.com/spf13/cobra"
 )
 
@@ -44,7 +46,7 @@ reaped lazily on any state write.`,
 	}
 	for _, ev := range []string{"prime", "post-compact", "session-end"} {
 		event := ev
-		hookCmd.AddCommand(&cobra.Command{
+		sub := &cobra.Command{
 			Use:          event,
 			Short:        "Run the " + event + " lifecycle event (idempotent per session)",
 			Args:         cobra.NoArgs,
@@ -52,7 +54,18 @@ reaped lazily on any state write.`,
 			RunE: func(cmd *cobra.Command, args []string) error {
 				return runHookEvent(event)
 			},
-		})
+		}
+		if event == "prime" {
+			// --event picks the emission channel (agentic-kpko): SessionStart
+			// stdout is NOT a reliable context-injection surface (DE-327 /
+			// code.claude.com/docs/en/hooks), so "sessionstart" emits the
+			// hookSpecificOutput.additionalContext JSON shape; anything else
+			// (UserPromptSubmit, manual runs) keeps plain stdout, which IS a
+			// supported channel there.
+			sub.Flags().StringVar(&hookPrimeEventFlag, "event", "",
+				`Hook event emitting this prime: "sessionstart" (additionalContext JSON) or "userpromptsubmit"/empty (plain stdout)`)
+		}
+		hookCmd.AddCommand(sub)
 	}
 	rootCmd.AddCommand(hookCmd)
 }
@@ -63,36 +76,96 @@ type hookSessionState struct {
 	EventsFired map[string]string `json:"events_fired"`
 }
 
+// hookPrimeEventFlag selects the emission channel for `hook prime`.
+var hookPrimeEventFlag string
+
 // Work runners are seams so the guard machinery is unit-testable without
-// invoking the real prime/gc/ingest paths. The defaults re-exec this binary
-// so hook output stays byte-equivalent to the raw commands the pre-plugin
-// settings.json templates ran.
-var hookPrimeWork = func() error {
+// invoking the real prime/gc/ingest paths. hookPrimeWork returns primed=true
+// only when memories were actually delivered — the guard records session
+// state ONLY then, so an undelivered prime retries on the next hook instead
+// of silently marking the session primed (the v3.3.0 regression, agentic-kpko).
+var hookPrimeWork = func(event string) (bool, error) {
 	proj := resolveProjectDir()
+	md := ""
 	out, err := exec.Command(selfExecutable(), "recall", "--prime", "--format", "md", "-p", proj).Output() //nolint:gosec // argv-array, no shell
-	if err != nil {
-		return nil // no brain / recall failure: hooks are best-effort, stay silent
+	if err == nil {
+		md = string(out)
 	}
-	if len(out) == 0 {
-		return nil
+	rendered, primed := renderPrimeOutput(event, md, proj)
+	if rendered != "" {
+		fmt.Print(rendered)
 	}
+	return primed, nil
+}
+
+// primePayload is the SessionStart JSON emission shape (Claude Code hooks
+// protocol: exit 0 + JSON; additionalContext is the reliable model-context
+// channel, systemMessage the UI notice).
+type primePayload struct {
+	SystemMessage      string `json:"systemMessage"`
+	HookSpecificOutput struct {
+		HookEventName     string `json:"hookEventName"`
+		AdditionalContext string `json:"additionalContext"`
+	} `json:"hookSpecificOutput"`
+}
+
+// renderPrimeOutput renders the prime emission for one hook event. Pure over
+// (event, primeMD, projectDir) apart from reading the GC log and checking
+// brain-file existence — unit-testable without the recall re-exec.
+func renderPrimeOutput(event, primeMD, projectDir string) (out string, primed bool) {
+	trimmed := strings.TrimSpace(primeMD)
+	sessionStart := event == "sessionstart"
+
+	if trimmed == "" {
+		// Distinguish "no brain" (worth a one-time notice at session start)
+		// from "brain exists, nothing recalled" (stay silent; the
+		// UserPromptSubmit fallback may retry). Never primed either way.
+		if !sessionStart {
+			return "", false
+		}
+		if _, err := os.Stat(brain.ProjectPath(projectDir)); err == nil {
+			return "", false
+		}
+		var p primePayload
+		p.SystemMessage = "Cerebro: no brain initialized. Run: cerebro init"
+		p.HookSpecificOutput.HookEventName = "SessionStart"
+		p.HookSpecificOutput.AdditionalContext = "Cerebro: no brain initialized for this project. Run: cerebro init"
+		data, err := json.Marshal(p)
+		if err != nil {
+			return "", false
+		}
+		return string(data) + "\n", false
+	}
+
 	count := 0
-	for _, line := range splitLines(string(out)) {
+	for _, line := range splitLines(primeMD) {
 		if len(line) > 12 && line[0] == '#' && line[1] == '#' {
 			count++
 		}
 	}
-	fmt.Printf("Cerebro online. %d memories loaded.\n\n%s", count, out)
-	// Surface the last GC eviction line for operator review, as the raw
-	// settings.json hook did.
-	gcLog := filepath.Join(proj, ".cerebro-gc.log")
+	banner := fmt.Sprintf("Cerebro online. %d memories loaded.", count)
+
+	gcTail := ""
+	gcLog := filepath.Join(projectDir, ".cerebro-gc.log")
 	if data, err := os.ReadFile(gcLog); err == nil && len(data) > 0 { //nolint:gosec // project-local log path
 		lines := splitLines(string(data))
 		if len(lines) > 0 {
-			fmt.Printf("\n--- CEREBRO GC EVICTIONS (review and re-add if needed) ---\n%s\n", lines[len(lines)-1])
+			gcTail = fmt.Sprintf("\n\n--- CEREBRO GC EVICTIONS (review and re-add if needed) ---\n%s", lines[len(lines)-1])
 		}
 	}
-	return nil
+
+	if sessionStart {
+		var p primePayload
+		p.SystemMessage = banner
+		p.HookSpecificOutput.HookEventName = "SessionStart"
+		p.HookSpecificOutput.AdditionalContext = fmt.Sprintf("%s\n\n%s%s", banner, primeMD, gcTail)
+		data, err := json.Marshal(p)
+		if err != nil {
+			return "", false
+		}
+		return string(data) + "\n", true
+	}
+	return fmt.Sprintf("%s\n\n%s%s", banner, primeMD, gcTail), true
 }
 
 var hookSessionEndWork = func() error {
@@ -210,8 +283,15 @@ func runHookEvent(event string) error {
 		if st.EventsFired["session_start"] != "" {
 			return nil // already primed this session
 		}
-		if err := hookPrimeWork(); err != nil {
+		primed, err := hookPrimeWork(hookPrimeEventFlag)
+		if err != nil {
 			return err
+		}
+		if !primed {
+			// Nothing delivered — leave state unrecorded so a later prime
+			// (e.g. the UserPromptSubmit fallback) retries. This is the
+			// delivery guarantee the v3.3.0 guard had dropped.
+			return nil
 		}
 		st.EventsFired["session_start"] = now
 	case "post-compact":

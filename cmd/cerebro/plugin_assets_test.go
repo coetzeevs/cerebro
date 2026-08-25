@@ -94,14 +94,25 @@ func TestPluginHooks_ShapeAndNoStopHook(t *testing.T) {
 	if n := strings.Count(string(data), "cerebro stats -p"); n < 8 {
 		t.Errorf("expected self-gating on all plugin hook commands, found %d gates", n)
 	}
+	// agentic-kpko lockstep: SessionStart primes emit via the reliable
+	// additionalContext channel; no raw stdout recall remains in the plugin.
+	if !strings.Contains(string(data), "--event sessionstart") {
+		t.Error("plugin SessionStart hooks must use `hook prime --event sessionstart`")
+	}
+	if strings.Contains(string(data), "recall --prime") {
+		t.Error("plugin hooks must not invoke raw `recall --prime` (unreliable SessionStart stdout, DE-327)")
+	}
 }
 
 func TestInitSettingsTemplate_UsesGuardedHookCommands(t *testing.T) {
 	s := string(settingsTemplate)
-	for _, want := range []string{"cerebro hook prime", "cerebro hook post-compact", "cerebro hook session-end"} {
+	for _, want := range []string{"cerebro hook prime --event sessionstart", "cerebro hook prime --event userpromptsubmit", "cerebro hook post-compact", "cerebro hook session-end"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("init settings template missing guarded command %q", want)
 		}
+	}
+	if strings.Contains(s, "recall --prime") {
+		t.Error("init template must not invoke raw `recall --prime` (unreliable SessionStart stdout, DE-327 / agentic-kpko)")
 	}
 	// Operator ruling 2026-08-25: the stop-guard ships un-wired everywhere —
 	// neither the plugin (see TestPluginHooks_ShapeAndNoStopHook) nor init

@@ -1,6 +1,6 @@
 {
   "name": "cerebro",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "displayName": "Cerebro Memory",
   "description": "Local-first persistent memory for Claude Code sessions: session-start recall priming, post-compaction recovery, session-end GC, and /cerebro:remember, /cerebro:recall, /cerebro:consolidate, /cerebro:develop, /cerebro:rules skills. Requires the cerebro CLI (brew install --cask coetzeevs/tap/cerebro).",
   "author": {

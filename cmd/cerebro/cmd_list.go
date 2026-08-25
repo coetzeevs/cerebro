@@ -80,6 +80,7 @@ func outputNodeListWithProvenance(b *brain.Brain, nodes []store.Node) {
 		out[i] = nodeWithProvenanceStatus{
 			Node:             nodes[i],
 			ProvenanceStatus: statuses[nodes[i].ID],
+			OriginStatus:     b.OriginStatus(&nodes[i]),
 		}
 	}
 	outputJSON(out)

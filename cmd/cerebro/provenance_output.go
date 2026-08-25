@@ -22,14 +22,19 @@ import (
 // optional provenance chain (omitted from JSON when nil/absent).
 type nodeWithProvenance struct {
 	*store.NodeWithEdges
-	ProvenanceStatus string                `json:"provenance_status"`
-	Provenance       []provenanceChainItem `json:"provenance,omitempty"`
+	ProvenanceStatus string `json:"provenance_status"`
+	// OriginStatus (agentic-goc7): recorded|legacy|unknown, computed against
+	// the origin-convention boundary. Always present in get JSON, mirroring
+	// provenance_status; the raw origin_* fields ride on the embedded Node.
+	OriginStatus string                `json:"origin_status"`
+	Provenance   []provenanceChainItem `json:"provenance,omitempty"`
 }
 
 // scoredNodeWithProvenance is the JSON presentation wrapper for one recall result.
 type scoredNodeWithProvenance struct {
 	store.ScoredNode
 	ProvenanceStatus string                `json:"provenance_status"`
+	OriginStatus     string                `json:"origin_status"`
 	Provenance       []provenanceChainItem `json:"provenance,omitempty"`
 }
 
@@ -38,6 +43,7 @@ type scoredNodeWithProvenance struct {
 type nodeWithProvenanceStatus struct {
 	store.Node
 	ProvenanceStatus string `json:"provenance_status"`
+	OriginStatus     string `json:"origin_status"`
 }
 
 // provenanceStatusFor returns the provenance_status for a single id, defaulting

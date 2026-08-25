@@ -16,6 +16,7 @@ type (
 	AddEdgeOpts   = store.AddEdgeOpts
 	Stats         = store.Stats
 	GCResult      = store.GCResult
+	Relation      = store.Relation
 
 	// Export/Import types
 	ExportBundle     = store.ExportBundle

@@ -65,8 +65,8 @@ func TestNodesFTSMigrationFromV2(t *testing.T) {
 	defer func() { _ = s2.Close() }()
 
 	ver, _ := s2.GetMeta("schema_version")
-	if ver != "5" {
-		t.Fatalf("expected schema_version=5 after migration, got %q", ver)
+	if ver != "6" {
+		t.Fatalf("expected schema_version=6 after migration, got %q", ver)
 	}
 
 	// nodes_fts must be backfilled with the pre-existing node.

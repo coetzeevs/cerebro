@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -78,7 +79,8 @@ func (s *Store) KeywordSearch(query string, limit int) ([]ScoredNode, error) {
 			n.id, n.type, n.subtype, n.content, n.metadata, n.importance, n.decay_rate,
 			n.access_count, n.times_reinforced, n.status, n.embedding_model,
 			n.created_at, n.last_accessed, n.last_reinforced,
-			n.updated_at, n.last_surfaced
+			n.updated_at, n.last_surfaced,
+			n.origin_actor, n.origin_channel, n.origin_session, n.origin_host
 		FROM nodes_fts f
 		JOIN nodes n ON n.id = f.node_id
 		WHERE nodes_fts MATCH ? AND n.status = 'active'
@@ -98,6 +100,7 @@ func (s *Store) KeywordSearch(query string, limit int) ([]ScoredNode, error) {
 		var nodeID string
 		var bm25Score float64
 		var subtype, metadata, lastReinf, updatedAt, lastSurfaced interface{}
+		var originActor, originChannel, originSession, originHost sql.NullString
 
 		if err := rows.Scan(
 			&nodeID, &bm25Score,
@@ -105,6 +108,7 @@ func (s *Store) KeywordSearch(query string, limit int) ([]ScoredNode, error) {
 			&sn.AccessCount, &sn.TimesReinforced, &sn.Status, &sn.EmbeddingModel,
 			&sn.CreatedAt, &sn.LastAccessed, &lastReinf,
 			&updatedAt, &lastSurfaced,
+			&originActor, &originChannel, &originSession, &originHost,
 		); err != nil {
 			return nil, fmt.Errorf("scanning keyword result: %w", err)
 		}
@@ -112,6 +116,10 @@ func (s *Store) KeywordSearch(query string, limit int) ([]ScoredNode, error) {
 		if v, ok := subtype.(string); ok {
 			sn.Subtype = v
 		}
+		sn.OriginActor = originActor.String
+		sn.OriginChannel = originChannel.String
+		sn.OriginSession = originSession.String
+		sn.OriginHost = originHost.String
 		if m, ok := metadata.(string); ok {
 			sn.Metadata = []byte(m)
 		}

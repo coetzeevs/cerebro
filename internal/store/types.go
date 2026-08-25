@@ -53,6 +53,13 @@ type Node struct {
 	// ProvenanceRoot marks the node as a first-class provenance source
 	// (agentic-lbjg). Stored as a 0/1 INTEGER in nodes.provenance_root.
 	ProvenanceRoot bool `json:"provenance_root"`
+	// Origin identity (agentic-goc7): who/what wrote this memory, through
+	// which channel, from which session and host. Stamped at write time,
+	// immutable, never inferred; empty string = NULL = not recorded.
+	OriginActor   string `json:"origin_actor,omitempty"`
+	OriginChannel string `json:"origin_channel,omitempty"`
+	OriginSession string `json:"origin_session,omitempty"`
+	OriginHost    string `json:"origin_host,omitempty"`
 }
 
 // NodeWithDepth is a node paired with its BFS depth from a WalkRelation start

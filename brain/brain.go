@@ -164,6 +164,10 @@ func (b *Brain) Add(content string, nodeType store.NodeType, opts ...AddOption) 
 		Importance:     o.Importance,
 		EmbeddingModel: b.embedder.Model(),
 		ProvenanceRoot: o.ProvenanceRoot,
+		OriginActor:    o.OriginActor,
+		OriginChannel:  o.OriginChannel,
+		OriginSession:  o.OriginSession,
+		OriginHost:     o.OriginHost,
 	})
 	if err != nil {
 		return "", err
@@ -220,6 +224,10 @@ func (b *Brain) Supersede(oldID, content string, nodeType store.NodeType, opts .
 		Metadata:       o.Metadata,
 		Importance:     o.Importance,
 		EmbeddingModel: b.embedder.Model(),
+		OriginActor:    o.OriginActor,
+		OriginChannel:  o.OriginChannel,
+		OriginSession:  o.OriginSession,
+		OriginHost:     o.OriginHost,
 	})
 	if err != nil {
 		return "", err
@@ -275,6 +283,37 @@ func (b *Brain) WalkProvenance(id string, depth int) ([]store.NodeWithDepth, err
 // agentic-lbjg AC6.
 func (b *Brain) ProvenanceStatus(ids []string) (map[string]string, error) {
 	return b.store.ProvenanceStatusBatch(ids)
+}
+
+// RegisterRelation records a relation name (with an optional traversal class)
+// in the typed-relation registry — agentic-8l2g. Idempotent.
+func (b *Brain) RegisterRelation(name, class string) error {
+	return b.store.RegisterRelation(name, class)
+}
+
+// ListRelations returns every registered relation, name-ordered.
+func (b *Brain) ListRelations() ([]store.Relation, error) {
+	return b.store.ListRelations()
+}
+
+// RemoveRelation deletes a relation from the registry (existing edges keep it).
+func (b *Brain) RemoveRelation(name string) error {
+	return b.store.RemoveRelation(name)
+}
+
+// RelationRegistered reports whether the named relation is in the registry.
+func (b *Brain) RelationRegistered(name string) (bool, error) {
+	return b.store.RelationRegistered(name)
+}
+
+// OriginStatus classifies a node's origin record (recorded|legacy|unknown)
+// against the brain's origin-convention boundary — agentic-goc7.
+func (b *Brain) OriginStatus(n *store.Node) string {
+	boundary, err := b.store.OriginBoundary()
+	if err != nil {
+		boundary = nil
+	}
+	return store.OriginStatusFor(n, boundary)
 }
 
 // ResolveID resolves a full UUID or short prefix to a full node ID.
@@ -635,6 +674,12 @@ func (b *Brain) Promote(ctx context.Context, nodeID string, dst *Brain, opts ...
 		Metadata:       globalMeta,
 		Importance:     0.5,
 		EmbeddingModel: dst.embedder.Model(),
+		// Promotion copies the memory: the original author's identity travels
+		// with it (the promotion event itself is in the provenance metadata).
+		OriginActor:   srcNode.OriginActor,
+		OriginChannel: srcNode.OriginChannel,
+		OriginSession: srcNode.OriginSession,
+		OriginHost:    srcNode.OriginHost,
 	})
 	if err != nil {
 		return "", fmt.Errorf("adding to global store: %w", err)
@@ -702,6 +747,10 @@ type addOptions struct {
 	Metadata       json.RawMessage
 	Importance     float64
 	ProvenanceRoot bool
+	OriginActor    string
+	OriginChannel  string
+	OriginSession  string
+	OriginHost     string
 }
 
 func addDefaults() addOptions {
@@ -722,6 +771,19 @@ func WithMetadata(m json.RawMessage) AddOption {
 // defaults provenance_root to 0, so existing callers are unaffected.
 func WithProvenanceRoot() AddOption {
 	return func(o *addOptions) { o.ProvenanceRoot = true }
+}
+
+// WithOrigin stamps the write-time identity on the new node (agentic-goc7):
+// who wrote it (actor), through what (channel), from which session and host.
+// Empty fields store as NULL — origin is recorded, never fabricated, so an
+// option-less Add leaves all four unset.
+func WithOrigin(actor, channel, session, host string) AddOption {
+	return func(o *addOptions) {
+		o.OriginActor = actor
+		o.OriginChannel = channel
+		o.OriginSession = session
+		o.OriginHost = host
+	}
 }
 
 type updateOptions struct {

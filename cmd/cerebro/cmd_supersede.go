@@ -12,6 +12,10 @@ import (
 var supersedeTypeFlag string
 var supersedeImportanceFlag float64
 
+// supersedeOriginFlags carries the --origin-* overrides for `cerebro supersede`
+// (goc7): the replacement node records the SUPERSEDER's identity.
+var supersedeOriginFlags originFlags
+
 func init() {
 	cmd := &cobra.Command{
 		Use:   "supersede <old-id> <new-content>",
@@ -21,6 +25,7 @@ func init() {
 	}
 	cmd.Flags().StringVarP(&supersedeTypeFlag, "type", "t", "concept", "Type for new memory")
 	cmd.Flags().Float64VarP(&supersedeImportanceFlag, "importance", "i", 0.5, "Importance for new memory")
+	supersedeOriginFlags.register(cmd)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -44,7 +49,8 @@ func runSupersede(cmd *cobra.Command, args []string) error {
 	}
 
 	newID, err := b.Supersede(oldID, content, store.NodeType(nodeType),
-		brain.WithImportance(supersedeImportanceFlag))
+		brain.WithImportance(supersedeImportanceFlag),
+		supersedeOriginFlags.option(cmd))
 	if err != nil {
 		return err
 	}

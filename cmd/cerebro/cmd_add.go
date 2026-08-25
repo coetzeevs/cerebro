@@ -40,6 +40,9 @@ var addProvenanceRootFlag bool
 // N-S1: trimmed and validated against beadsIdRegexp before use.
 var addBeadsIdFlag string
 
+// addOriginFlags carries the --origin-* overrides for `cerebro add` (goc7).
+var addOriginFlags originFlags
+
 // beadsIdRegexp is the HS-029 canonical regex, byte-identical to:
 //
 //	validate-hello-stack.sh:243  ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$
@@ -65,6 +68,7 @@ func init() {
 	// --beads-id: optional beads task id for forensic linkage (HS-039).
 	// Value is trimmed and validated against the HS-029 canonical regex before persisting.
 	cmd.Flags().StringVar(&addBeadsIdFlag, "beads-id", "", "Beads task id to tag this memory with (forensic linkage); must match ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$")
+	addOriginFlags.register(cmd)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -90,6 +94,7 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	if addProvenanceRootFlag {
 		opts = append(opts, brain.WithProvenanceRoot())
 	}
+	opts = append(opts, addOriginFlags.option(cmd))
 
 	// N-S1 (HS-039): trim first, then validate.
 	// Canonical trim location is the Go CLI layer (HS-031 / TL-N1 precedent).

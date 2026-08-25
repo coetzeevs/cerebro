@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added [agentic-goc7]
+
+- **Origin identity on memory nodes** (schema v6). Four nullable columns — `origin_actor`, `origin_channel`, `origin_session`, `origin_host` — record who/what wrote a memory, through which channel, from which session and host. Stamped at write time, never inferred: the CLI derives only observed facts (channel `cli`, hostname, `$CEREBRO_ORIGIN_ACTOR`, `$CEREBRO_ORIGIN_SESSION`/`$CLAUDE_SESSION_ID`), overridable per-write with `--origin-*` flags on `add`/`supersede`. `supersede` records the superseder's identity; `promote` carries the original author's; `import` stamps origin-less bundle nodes `actor/channel="import"` so entry provenance is never silently blank. Origin survives the JSON-bundle and SQL-dump round-trips, and both search lanes (vector + keyword) carry it into recall results. `get`/`list`/`recall` JSON surface the raw fields plus a computed `origin_status`: `recorded` (actor present), `legacy` (pre-convention node — absence expected), `unknown` (post-convention node with no actor — an honest gap). The v5→v6 migration is transactional and self-healing per the v4→v5 idiom; the one-time `origin_convention_since` boundary stamp classifies every pre-existing node `legacy`. Live rehearsal on a 603-node brain copy: 56 ms, node/edge counts exact. [agentic-goc7]
+
+### Added [agentic-8l2g]
+
+- **Typed-relation registry** for edge relations. A new `relations` table (seeded with `derived_from`, `supports`, `contradicts`, `supersedes`) names the relations a brain's edges are expected to use, with an optional free-form traversal class. `cerebro relation add <name> [--class <c>]` / `relation list` / `relation rm <name>` manage it; `cerebro edge` warns on stderr — never errors — when the relation is unregistered (the registry is advisory: warn-not-error, fail-open on lookup errors). Removing a relation touches only the registry; existing edges keep it. Go API: `RegisterRelation`, `ListRelations`, `RemoveRelation`, `RelationRegistered`. [agentic-8l2g]
+
 ## [3.1.0] - 2026-08-25
 
 ### Fixed [agentic-0p3w]

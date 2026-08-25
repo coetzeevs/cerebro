@@ -55,6 +55,18 @@ func runSearch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// N2 wire-lite: query-mode retrieval is usage — touch access telemetry for
+	// the returned nodes (best-effort; a telemetry write never fails a recall).
+	// Prime mode stamps last_surfaced instead and does not reach this path.
+	// Global-store results are project-foreign; touch only project-brain hits.
+	{
+		ids := make([]string, 0, len(results))
+		for i := range results {
+			ids = append(ids, results[i].ID)
+		}
+		_ = b.TouchAccessed(ids)
+	}
+
 	outputScoredList(results)
 	return nil
 }

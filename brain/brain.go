@@ -754,3 +754,11 @@ func WithUpdatedImportance(i float64) UpdateOption {
 func WithUpdatedSubtype(s string) UpdateOption {
 	return func(o *updateOptions) { o.Subtype = &s }
 }
+
+// TouchAccessed forwards retrieval-usage telemetry to the store (N2). The CLI
+// calls this for query-mode recall/search results; library consumers (and the
+// eval harness, which must not perturb the brain between A/B runs) do not get
+// implicit touching — Search stays read-only.
+func (b *Brain) TouchAccessed(ids []string) error {
+	return b.store.TouchAccessed(ids)
+}

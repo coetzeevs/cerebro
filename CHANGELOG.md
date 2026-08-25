@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-08-25
+
 ### Fixed [agentic-0p3w]
 
 - **`export --format sql` now emits edge `valid_at`/`invalid_at`.** The SQL text-dump edge emitter still wrote the pre-xtzn 5-column form, so a dump → replay silently reset every edge's bi-temporal window to NULL/NULL. Bounds emit in the storage layout (`2006-01-02 15:04:05`), never RFC3339, because the as-of predicate compares raw strings. Round-trip guard covers literal format, instant equality, live as-of semantics on the replayed store, and NULL preservation. [agentic-0p3w]

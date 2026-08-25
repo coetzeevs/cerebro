@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-08-25
+
 ### Added [agentic-goc7]
 
 - **Origin identity on memory nodes** (schema v6). Four nullable columns — `origin_actor`, `origin_channel`, `origin_session`, `origin_host` — record who/what wrote a memory, through which channel, from which session and host. Stamped at write time, never inferred: the CLI derives only observed facts (channel `cli`, hostname, `$CEREBRO_ORIGIN_ACTOR`, `$CEREBRO_ORIGIN_SESSION`/`$CLAUDE_SESSION_ID`), overridable per-write with `--origin-*` flags on `add`/`supersede`. `supersede` records the superseder's identity; `promote` carries the original author's; `import` stamps origin-less bundle nodes `actor/channel="import"` so entry provenance is never silently blank. Origin survives the JSON-bundle and SQL-dump round-trips, and both search lanes (vector + keyword) carry it into recall results. `get`/`list`/`recall` JSON surface the raw fields plus a computed `origin_status`: `recorded` (actor present), `legacy` (pre-convention node — absence expected), `unknown` (post-convention node with no actor — an honest gap). The v5→v6 migration is transactional and self-healing per the v4→v5 idiom; the one-time `origin_convention_since` boundary stamp classifies every pre-existing node `legacy`. Live rehearsal on a 603-node brain copy: 56 ms, node/edge counts exact. [agentic-goc7]

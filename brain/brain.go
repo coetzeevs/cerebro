@@ -269,6 +269,13 @@ func (b *Brain) Consolidate(intoID string, episodeIDs []string) error {
 	return b.store.ConsolidateInto(intoID, episodeIDs)
 }
 
+// ConsolidationCandidates surfaces rollup candidates — active episodes
+// grouped by subtype, biggest groups first, oldest first within a group
+// (agentic-eq7a). The agent synthesizes; cerebro only selects.
+func (b *Brain) ConsolidationCandidates(perGroupLimit int) ([]store.CandidateGroup, error) {
+	return b.store.ConsolidationCandidates(perGroupLimit)
+}
+
 // WalkProvenance returns the derived_from lineage chain walked outward from id up
 // to depth hops (agentic-lbjg AC5): WalkRelation(id, derived_from, depth,
 // outgoing=true). The start node is first at depth 0; every reachable source

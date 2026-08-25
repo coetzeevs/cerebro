@@ -1,3 +1,15 @@
+---
+name: rules
+description: Load the Cerebro behavioral rules (memory-system usage conventions) into context on demand. Use at session start in a project with a Cerebro brain, or when unsure how to use /cerebro:remember, /cerebro:recall, or origin identity conventions.
+disable-model-invocation: false
+allowed-tools: Bash(cerebro *)
+---
+
+# Cerebro Behavioral Rules
+
+Plugins cannot auto-load CLAUDE.md content; this skill carries the same rules
+`cerebro init` appends to a project's CLAUDE.md, loadable on demand.
+
 ## Cerebro Memory System
 
 This environment uses Cerebro for persistent memory across sessions.

@@ -6,17 +6,18 @@ import "github.com/coetzeevs/cerebro/internal/store"
 // These types appear in brain.Brain's public API signatures but are defined
 // in internal/store/, which cannot be imported by external Go modules.
 type (
-	Node          = store.Node
-	Edge          = store.Edge
-	ScoredNode    = store.ScoredNode
-	NodeWithEdges = store.NodeWithEdges
-	NodeWithDepth = store.NodeWithDepth
-	NodeType      = store.NodeType
-	ListNodesOpts = store.ListNodesOpts
-	AddEdgeOpts   = store.AddEdgeOpts
-	Stats         = store.Stats
-	GCResult      = store.GCResult
-	Relation      = store.Relation
+	Node           = store.Node
+	Edge           = store.Edge
+	ScoredNode     = store.ScoredNode
+	NodeWithEdges  = store.NodeWithEdges
+	NodeWithDepth  = store.NodeWithDepth
+	NodeType       = store.NodeType
+	ListNodesOpts  = store.ListNodesOpts
+	AddEdgeOpts    = store.AddEdgeOpts
+	Stats          = store.Stats
+	GCResult       = store.GCResult
+	Relation       = store.Relation
+	CandidateGroup = store.CandidateGroup
 
 	// Export/Import types
 	ExportBundle     = store.ExportBundle

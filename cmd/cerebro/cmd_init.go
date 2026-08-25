@@ -137,6 +137,12 @@ func runInit(_ *cobra.Command, _ []string) error {
 		fmt.Println()
 		fmt.Println("Tip: customize defaults with 'cerebro config set <key> <value>'.")
 		fmt.Println("     Run 'cerebro config list' to see available settings.")
+		fmt.Println()
+		fmt.Println("Using Claude Code? The cerebro plugin is the preferred install path:")
+		fmt.Println("  /plugin marketplace add coetzeevs/cerebro")
+		fmt.Println("  /plugin install cerebro@cerebro")
+		fmt.Println("init remains fully supported as the cross-tool fallback; the two")
+		fmt.Println("coexist safely (lifecycle hooks are session-guarded in the binary).")
 	}
 
 	// Check Ollama if using ollama provider

@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 )
 
 // ConsolidateInto records a consolidation: it flips each source episode to
@@ -118,4 +119,68 @@ func txEpisodeExists(tx *sql.Tx, id string) error {
 		return fmt.Errorf("source %q is a %s, not an episode", id, nodeType)
 	}
 	return nil
+}
+
+// CandidateGroup is one cluster of consolidation candidates (agentic-eq7a):
+// active episodes sharing a subtype. Count is the group's TOTAL active-episode
+// count even when Nodes is truncated by the per-group limit.
+type CandidateGroup struct {
+	Subtype string `json:"subtype"`
+	Count   int    `json:"count"`
+	Nodes   []Node `json:"nodes"`
+}
+
+// ConsolidationCandidates surfaces rollup candidates for the agent to
+// synthesize from (Model B: the agent reads episodes and writes the concept;
+// this only selects). Active episodes are grouped by subtype (empty subtype
+// is one group), biggest groups first, oldest episodes first within a group,
+// at most perGroupLimit nodes listed per group. Deterministic SQL — no
+// embedding cost, stable across invocations.
+func (s *Store) ConsolidationCandidates(perGroupLimit int) ([]CandidateGroup, error) {
+	if perGroupLimit <= 0 {
+		perGroupLimit = 10
+	}
+	rows, err := s.db.Query(`
+		SELECT id, type, subtype, content, metadata, importance, decay_rate,
+			access_count, times_reinforced, status, embedding_model,
+			created_at, last_accessed, last_reinforced,
+			updated_at, last_surfaced, provenance_root,
+			origin_actor, origin_channel, origin_session, origin_host
+		FROM nodes
+		WHERE type = 'episode' AND status = 'active'
+		ORDER BY COALESCE(subtype, ''), created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("selecting consolidation candidates: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
+
+	byKey := map[string]*CandidateGroup{}
+	var order []string
+	for rows.Next() {
+		n, err := scanNodeFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		key := n.Subtype
+		g, ok := byKey[key]
+		if !ok {
+			g = &CandidateGroup{Subtype: key}
+			byKey[key] = g
+			order = append(order, key)
+		}
+		g.Count++
+		if len(g.Nodes) < perGroupLimit {
+			g.Nodes = append(g.Nodes, *n)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	out := make([]CandidateGroup, 0, len(order))
+	for _, key := range order {
+		out = append(out, *byKey[key])
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Count > out[j].Count })
+	return out, nil
 }

@@ -1,0 +1,13 @@
+{
+  "name": "cerebro",
+  "owner": {
+    "name": "Coetzee van Staden"
+  },
+  "plugins": [
+    {
+      "name": "cerebro",
+      "source": "./claude-plugin/cerebro",
+      "description": "Local-first persistent memory for Claude Code sessions (requires the cerebro CLI)"
+    }
+  ]
+}

@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Internal: this repo's own dev harness (`.claude/`) re-scaffolded via `cerebro init --force` onto the guarded hook path with the rcj6 stdin re-pipe — adoption step 2 of the 2026-08-25 baseline, refreshed on v3.3.2. No product code changes.
+
 ## [3.3.2] - 2026-08-26
 
 ### Fixed [agentic-rcj6]

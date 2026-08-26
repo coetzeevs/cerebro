@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-08-25
+
 ### Fixed [agentic-kpko]
 
 - **Session-start priming now uses the reliable context channel, and the guard only records delivery.** `cerebro hook prime` gains `--event`: `sessionstart` emits the `hookSpecificOutput.additionalContext` JSON shape (with `systemMessage` for the UI) in a single recall — plain stdout is not a reliable SessionStart injection surface (code.claude.com/docs/en/hooks; the EDP estate's DE-327/HA-039 diagnosis, whose fix this ports into the binary) — while `userpromptsubmit`/empty keeps plain stdout, which is supported there. The session guard now records `session_start` **only when memories were actually delivered**: the v3.3.0 guard recorded state even when the stdout injection was dropped, which silenced the UserPromptSubmit fallback and could leave a session with no memories (regression found in the 2026-08-25 adoption baseline). An undelivered prime retries on the next hook. A missing brain emits a one-time JSON notice at session start; an existing-but-empty brain stays silent. The init settings template and the plugin hooks (v1.1.0) move to `--event sessionstart`/`--event userpromptsubmit` and drop the redundant second recall-for-count hook; drift guards assert no raw `recall --prime` remains in either template. [agentic-kpko]

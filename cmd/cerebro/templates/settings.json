@@ -6,11 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; RESULT=$(cerebro hook prime -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null); if [ -n \"$RESULT\" ]; then echo \"$RESULT\"; else cerebro stats -p \"$CLAUDE_PROJECT_DIR\" >/dev/null 2>&1 || echo 'Cerebro: no brain initialized for this project. Run: cerebro init'; fi"
-          },
-          {
-            "type": "command",
-            "command": "COUNT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); if [ \"$COUNT\" -gt 0 ]; then printf '{\"systemMessage\": \"Cerebro online. %d memories loaded.\"}' \"$COUNT\"; else printf '{\"systemMessage\": \"Cerebro: no brain initialized. Run: cerebro init\"}'; fi"
+            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       },
@@ -19,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       },
@@ -28,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       },
@@ -37,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       }
@@ -48,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook prime -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook prime --event userpromptsubmit -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       }

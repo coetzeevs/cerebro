@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-08-26
+
+### Fixed [agentic-rcj6]
+
+- **Hook session identity now comes from the hook's stdin JSON.** Claude Code does not export `CLAUDE_SESSION_ID` to hook processes (code.claude.com/docs/en/env-vars.md); the session id arrives only in the JSON piped to the hook's stdin. `cerebro hook` resolved the id env-first with a `"default"` fallback, so in real hook context every session collapsed onto one state file — one session's recorded `session_start`/`session_end` suppressed every later session's prime and GC until the state aged out. Resolution order is now stdin JSON `session_id` → env var (manual runs, smokes) → `"default"`; stdin is read only when not a terminal so manual invocations never block. The init template and plugin hooks (v1.1.1) capture stdin once per hook line (`INPUT=$(cat)`) and re-pipe it to **every** `cerebro hook` invocation — in chained commands the first would otherwise consume it — and a drift guard fails CI on any unfed invocation. Found in the step-3 adoption pre-flight before any real-session damage. (Entry belongs to PR #69, restored here — its branch-side edit silently missed the file.) [agentic-rcj6]
+
 ## [3.3.1] - 2026-08-25
 
 ### Fixed [agentic-kpko]

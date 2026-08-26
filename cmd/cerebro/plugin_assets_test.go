@@ -102,6 +102,33 @@ func TestPluginHooks_ShapeAndNoStopHook(t *testing.T) {
 	if strings.Contains(string(data), "recall --prime") {
 		t.Error("plugin hooks must not invoke raw `recall --prime` (unreliable SessionStart stdout, DE-327)")
 	}
+	assertHookStdinPiped(t, string(data))
+}
+
+// assertHookStdinPiped enforces the rcj6 contract on a hooks JSON blob: the
+// session id lives ONLY in the hook's stdin JSON (CLAUDE_SESSION_ID is not
+// exported to hook processes), so every `cerebro hook` invocation must be
+// fed the captured stdin — a bare invocation in a chained command reads EOF
+// and collapses onto the shared "default" state.
+func assertHookStdinPiped(t *testing.T, blob string) {
+	t.Helper()
+	bare := 0
+	idx := 0
+	for {
+		i := strings.Index(blob[idx:], "cerebro hook ")
+		if i < 0 {
+			break
+		}
+		abs := idx + i
+		prefix := blob[:abs]
+		if !strings.HasSuffix(prefix, `printf '%s' \"$INPUT\" | `) && !strings.HasSuffix(prefix, `printf '%s' "$INPUT" | `) {
+			bare++
+		}
+		idx = abs + len("cerebro hook ")
+	}
+	if bare > 0 {
+		t.Errorf("%d `cerebro hook` invocation(s) not fed the captured stdin (rcj6: session id arrives only via stdin JSON)", bare)
+	}
 }
 
 func TestInitSettingsTemplate_UsesGuardedHookCommands(t *testing.T) {
@@ -114,6 +141,7 @@ func TestInitSettingsTemplate_UsesGuardedHookCommands(t *testing.T) {
 	if strings.Contains(s, "recall --prime") {
 		t.Error("init template must not invoke raw `recall --prime` (unreliable SessionStart stdout, DE-327 / agentic-kpko)")
 	}
+	assertHookStdinPiped(t, s)
 	// Operator ruling 2026-08-25: the stop-guard ships un-wired everywhere —
 	// neither the plugin (see TestPluginHooks_ShapeAndNoStopHook) nor init
 	// registers the Stop hook. Enabling it is a deliberate two-step opt-in

@@ -175,7 +175,10 @@ func (b *Brain) Add(content string, nodeType store.NodeType, opts ...AddOption) 
 
 	// Generate and store embedding
 	if err := b.embedAndStore(id, content); err != nil {
-		// Node is stored but embedding failed — mark as pending
+		// Node is stored but embedding failed — mark as pending, and say so:
+		// silent swallowing is how invisible-to-vector-recall debt accrued
+		// (agentic-h6gc). Recover with `cerebro embed --pending`.
+		fmt.Fprintf(os.Stderr, "Warning: embedding failed for %s: %v (node stored; run `cerebro embed --pending`)\n", id[:8], err)
 		_ = b.store.SetMeta("has_pending_embeddings", "true")
 	}
 
@@ -203,6 +206,7 @@ func (b *Brain) Update(id string, opts ...UpdateOption) error {
 	// Re-embed if content changed
 	if o.Content != nil {
 		if err := b.embedAndStore(id, *o.Content); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: embedding failed for %s: %v (update saved; run `cerebro embed --pending`)\n", id[:8], err)
 			_ = b.store.SetMeta("has_pending_embeddings", "true")
 		}
 	}
@@ -234,6 +238,7 @@ func (b *Brain) Supersede(oldID, content string, nodeType store.NodeType, opts .
 	}
 
 	if err := b.embedAndStore(newID, content); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: embedding failed for %s: %v (node stored; run `cerebro embed --pending`)\n", newID[:8], err)
 		_ = b.store.SetMeta("has_pending_embeddings", "true")
 	}
 
@@ -638,12 +643,14 @@ func mergeSearchResults(project, global []store.ScoredNode, limit int) []store.S
 }
 
 // embedAndStore generates an embedding and stores it in vec_nodes.
+// Oversized content chunks + mean-pools via embedContent (agentic-h6gc), so
+// large memories embed at write time instead of silently going pending.
 func (b *Brain) embedAndStore(nodeID, content string) error {
 	if b.embedder.Dimensions() == 0 {
 		return nil // noop provider
 	}
 
-	vec, err := b.embedder.Embed(context.Background(), content)
+	vec, err := b.embedContent(context.Background(), content)
 	if err != nil {
 		return err
 	}

@@ -444,7 +444,15 @@ func (s *Store) GetStats() (*Stats, error) {
 	}
 
 	// Pending embeddings (nodes with no vector entry)
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM nodes WHERE embedding_model = '' AND status = 'active'`).Scan(&stats.PendingEmbeddings); err != nil {
+	// Pending = active with NO vec row (agentic-h6gc; matches
+	// PendingEmbeddingNodes — embedding_model='' undercounted because the
+	// write path stamps the model before embedding succeeds). Falls back to
+	// the legacy predicate when the vector table is unavailable.
+	pendingQuery := `SELECT COUNT(*) FROM nodes WHERE embedding_model = '' AND status = 'active'`
+	if s.vecAvailable() {
+		pendingQuery = `SELECT COUNT(*) FROM nodes WHERE status = 'active' AND id NOT IN (SELECT node_id FROM vec_nodes)`
+	}
+	if err := s.db.QueryRow(pendingQuery).Scan(&stats.PendingEmbeddings); err != nil {
 		return nil, fmt.Errorf("counting pending embeddings: %w", err)
 	}
 
@@ -640,4 +648,48 @@ func (s *Store) TouchAccessed(ids []string) error {
 		args...,
 	)
 	return err
+}
+
+// PendingEmbeddingNodes returns every ACTIVE node with no row in vec_nodes —
+// the authoritative "needs (re-)embedding" definition (agentic-h6gc). The old
+// stats predicate counted embedding_model=” which undercounts: the write
+// path stamps the model before embedding, so an embed failure leaves the
+// stamp with no vector. Returns an empty slice when the vector table is
+// unavailable (no vec build / uninitialized) — nothing can embed there.
+func (s *Store) PendingEmbeddingNodes() ([]Node, error) {
+	if !s.vecAvailable() {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`
+		SELECT id, type, subtype, content, metadata, importance, decay_rate,
+			access_count, times_reinforced, status, embedding_model,
+			created_at, last_accessed, last_reinforced,
+			updated_at, last_surfaced, provenance_root,
+			origin_actor, origin_channel, origin_session, origin_host
+		FROM nodes
+		WHERE status = 'active' AND id NOT IN (SELECT node_id FROM vec_nodes)
+		ORDER BY created_at ASC`)
+	if err != nil {
+		return nil, fmt.Errorf("selecting pending-embedding nodes: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck // best-effort cleanup
+
+	var out []Node
+	for rows.Next() {
+		n, err := scanNodeFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *n)
+	}
+	return out, rows.Err()
+}
+
+// vecAvailable reports whether the vec_nodes virtual table exists.
+func (s *Store) vecAvailable() bool {
+	var name string
+	err := s.db.QueryRow(
+		`SELECT name FROM sqlite_master WHERE type='table' AND name='vec_nodes'`,
+	).Scan(&name)
+	return err == nil
 }

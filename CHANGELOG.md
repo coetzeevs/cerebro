@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added [agentic-h6gc]
+
+- **`cerebro embed --pending` — the backfill Import's contract always assumed existed.** Embeds every active node lacking a `vec_nodes` row (failed write-time embeds, imported nodes), reports per-node results, and clears `has_pending_embeddings` only at zero remaining; idempotent. **Oversized content now embeds**: content beyond ~6KB chars (the installed Ollama hard-fails around 6–7.8KB) is rune-safely chunked, embedded per chunk, mean-pooled, and L2-normalized — in the shared embed path, so large memories vectorize at `add`/`update` time too, not just via backfill. Embed failures in `Add`/`Update`/`Supersede` are no longer silent: a stderr warning names the node and the recovery command. `stats`' pending count now uses the same no-vec-row predicate (the old `embedding_model=''` test undercounted, since the write path stamps the model before embedding succeeds). Live: the estate brain's two permanently-unembeddable ~8KB memories gained vectors on first run and are now reachable through the vector lane. [agentic-h6gc]
+
 ### Changed
 
 - Internal: this repo's own dev harness (`.claude/`) re-scaffolded via `cerebro init --force` onto the guarded hook path with the rcj6 stdin re-pipe — adoption step 2 of the 2026-08-25 baseline, refreshed on v3.3.2. No product code changes.

@@ -23,6 +23,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -202,12 +203,51 @@ func splitLines(s string) []string {
 	return out
 }
 
-// hookSessionID resolves the session identity for state addressing.
+// hookStdin is the hook input stream; a var so tests can feed synthetic
+// hook JSON. In production it is the JSON Claude Code pipes to every hook.
+var hookStdin io.Reader = os.Stdin
+
+// hookSessionID resolves the session identity for state addressing, in
+// contract order (agentic-rcj6): the hook's stdin JSON `session_id` first —
+// Claude Code does NOT export CLAUDE_SESSION_ID to hook processes
+// (code.claude.com/docs/en/env-vars.md), stdin is the only in-hook source —
+// then the env var (manual runs, smokes, the agent's Bash environment),
+// then "default". Env-only resolution collapsed all real hook invocations
+// onto one state file, letting one session's state suppress every later
+// session's prime and session-end.
 func hookSessionID() string {
+	if sid := stdinSessionID(); sid != "" {
+		return sid
+	}
 	if sid := os.Getenv("CLAUDE_SESSION_ID"); sid != "" {
 		return sid
 	}
 	return "default"
+}
+
+// stdinSessionID reads the hook stdin JSON and extracts session_id. When
+// hookStdin is the process stdin, it is read only if it is not a terminal
+// (so a manual `cerebro hook prime` at a shell never blocks waiting for
+// input). Reading consumes stdin — callers resolve the session id once per
+// invocation, which runHookEvent does.
+func stdinSessionID() string {
+	if f, ok := hookStdin.(*os.File); ok && f == os.Stdin {
+		info, err := os.Stdin.Stat()
+		if err != nil || info.Mode()&os.ModeCharDevice != 0 {
+			return "" // interactive terminal: nothing piped
+		}
+	}
+	data, err := io.ReadAll(io.LimitReader(hookStdin, 1<<20))
+	if err != nil || len(data) == 0 {
+		return ""
+	}
+	var payload struct {
+		SessionID string `json:"session_id"`
+	}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return ""
+	}
+	return payload.SessionID
 }
 
 func sessionStateDir() (string, error) {

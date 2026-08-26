@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       },
@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       },
@@ -24,7 +24,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       },
@@ -33,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       }
@@ -44,7 +44,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; cerebro hook prime --event userpromptsubmit -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook prime --event userpromptsubmit -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null"
           }
         ]
       }
@@ -66,7 +66,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; echo \"$(date -Iseconds) compaction completed\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true"
+            "command": "INPUT=$(cat); printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; echo \"$(date -Iseconds) compaction completed\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true"
           }
         ]
       }
@@ -77,7 +77,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "cerebro hook session-end -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"
+            "command": "INPUT=$(cat); printf '%s' \"$INPUT\" | cerebro hook session-end -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true"
           }
         ]
       }

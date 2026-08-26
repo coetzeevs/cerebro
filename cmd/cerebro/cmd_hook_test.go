@@ -223,3 +223,65 @@ func TestHookPrime_UnprimedRunDoesNotRecordState(t *testing.T) {
 		t.Errorf("unprimed runs must retry (state not recorded): got %d calls, want 2", calls)
 	}
 }
+
+// ---- agentic-rcj6: session id from hook stdin JSON (TDD) ----
+//
+// Claude Code does NOT export CLAUDE_SESSION_ID to hook processes
+// (code.claude.com/docs/en/env-vars.md); the id arrives in the hook's stdin
+// JSON (session_id, present for all events). Env-only resolution collapsed
+// every real hook invocation onto "default", so one session's recorded
+// state suppressed every later session's prime and session-end.
+
+func TestHookSessionID_StdinJSONWins(t *testing.T) {
+	setupHookTest(t)
+	t.Setenv("CLAUDE_SESSION_ID", "env-sid")
+	primes, _ := stubHookRunners(t)
+
+	oldStdin := hookStdin
+	hookStdin = strings.NewReader(`{"session_id":"stdin-sid-a","hook_event_name":"SessionStart"}`)
+	t.Cleanup(func() { hookStdin = oldStdin })
+
+	_ = runHookEvent("prime")
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".cerebro", "session-state", "stdin-sid-a.json")); err != nil { //nolint:gosec // HOME is t.TempDir()
+		t.Errorf("stdin session_id must win over env: %v", err)
+	}
+	if *primes != 1 {
+		t.Fatalf("prime fired %d times, want 1", *primes)
+	}
+}
+
+func TestHookSessionID_TwoStdinSessionsIndependent_NoEnv(t *testing.T) {
+	setupHookTest(t)
+	t.Setenv("CLAUDE_SESSION_ID", "") // the real hook environment
+	primes, _ := stubHookRunners(t)
+
+	oldStdin := hookStdin
+	t.Cleanup(func() { hookStdin = oldStdin })
+
+	hookStdin = strings.NewReader(`{"session_id":"sess-a"}`)
+	_ = runHookEvent("prime")
+	hookStdin = strings.NewReader(`{"session_id":"sess-b"}`)
+	_ = runHookEvent("prime")
+	if *primes != 2 {
+		t.Errorf("distinct stdin sessions collapsed (the rcj6 defect): %d fires, want 2", *primes)
+	}
+	hookStdin = strings.NewReader(`{"session_id":"sess-a"}`)
+	_ = runHookEvent("prime")
+	if *primes != 2 {
+		t.Errorf("repeat stdin session must no-op: %d fires, want 2", *primes)
+	}
+}
+
+func TestHookSessionID_EnvFallbackWhenStdinLacksID(t *testing.T) {
+	setupHookTest(t) // sets CLAUDE_SESSION_ID=sess-hook-test
+	stubHookRunners(t)
+
+	oldStdin := hookStdin
+	hookStdin = strings.NewReader(`{"hook_event_name":"SessionStart"}`)
+	t.Cleanup(func() { hookStdin = oldStdin })
+
+	_ = runHookEvent("prime")
+	if _, err := os.Stat(filepath.Join(os.Getenv("HOME"), ".cerebro", "session-state", "sess-hook-test.json")); err != nil { //nolint:gosec // HOME is t.TempDir()
+		t.Errorf("env fallback broken when stdin lacks session_id: %v", err)
+	}
+}

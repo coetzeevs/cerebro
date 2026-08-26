@@ -37,7 +37,7 @@ Review the search results and decide for each match:
 
 For ADD (no matches or genuinely new):
 ```bash
-cerebro add --type <type> --importance <0.0-1.0> "<content>" -p "$CLAUDE_PROJECT_DIR"
+CEREBRO_ORIGIN_ACTOR="${CEREBRO_ORIGIN_ACTOR:-claude-code}" cerebro add --type <type> --importance <0.0-1.0> --origin-channel skill "<content>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 For UPDATE:
@@ -47,7 +47,7 @@ cerebro update <existing_id> --content "<refined content>" -p "$CLAUDE_PROJECT_D
 
 For SUPERSEDE:
 ```bash
-cerebro supersede <old_id> --type <type> --importance <0.0-1.0> "<new content>" -p "$CLAUDE_PROJECT_DIR"
+CEREBRO_ORIGIN_ACTOR="${CEREBRO_ORIGIN_ACTOR:-claude-code}" cerebro supersede <old_id> --type <type> --importance <0.0-1.0> --origin-channel skill "<new content>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 5: Create edges
@@ -57,7 +57,13 @@ If the new/updated memory relates to other known memories:
 cerebro edge <source_id> <target_id> <relation> -p "$CLAUDE_PROJECT_DIR"
 ```
 
-Relations: `relates_to`, `depends_on`, `learned_from`, `resulted_in`, `supersedes`, `blocks`, `implements`
+Use a relation from the registry (`cerebro relation list -p "$CLAUDE_PROJECT_DIR"`).
+Common relations: `relates_to`, `depends_on`, `learned_from`, `resulted_in`, `supersedes`, `blocks`, `implements`.
+An unregistered relation warns (it still works). If a new relation name is genuinely
+needed, register it deliberately first so the ontology stays curated:
+```bash
+cerebro relation add <name> --class <structural|topical> -p "$CLAUDE_PROJECT_DIR"
+```
 
 ## Importance Guidelines
 

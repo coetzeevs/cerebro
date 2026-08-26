@@ -32,29 +32,26 @@ For each cluster, create appropriate higher-order nodes:
 
 **Concepts** for accumulated factual knowledge:
 ```bash
-cerebro add --type concept --importance <0.0-1.0> "<synthesized fact>" -p "$CLAUDE_PROJECT_DIR"
+CEREBRO_ORIGIN_ACTOR="${CEREBRO_ORIGIN_ACTOR:-claude-code}" cerebro add --type concept --importance <0.0-1.0> --origin-channel skill "<synthesized fact>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 **Procedures** for learned rules or workflows:
 ```bash
-cerebro add --type procedure --importance <0.0-1.0> "<rule or workflow>" -p "$CLAUDE_PROJECT_DIR"
+CEREBRO_ORIGIN_ACTOR="${CEREBRO_ORIGIN_ACTOR:-claude-code}" cerebro add --type procedure --importance <0.0-1.0> --origin-channel skill "<rule or workflow>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
 **Reflections** for meta-observations:
 ```bash
-cerebro add --type reflection --importance <0.0-1.0> "<observation>" -p "$CLAUDE_PROJECT_DIR"
+CEREBRO_ORIGIN_ACTOR="${CEREBRO_ORIGIN_ACTOR:-claude-code}" cerebro add --type reflection --importance <0.0-1.0> --origin-channel skill "<observation>" -p "$CLAUDE_PROJECT_DIR"
 ```
 
-## Step 4: Link and mark
+## Step 4: Link and mark (atomic)
 
-For each new node, link it to its source episodes:
+For each new node, consolidate its source episodes into it — this wires a
+`derived_from` provenance edge to every source AND marks the sources
+consolidated, in one atomic transaction:
 ```bash
-cerebro edge <new_id> <episode_id> learned_from -p "$CLAUDE_PROJECT_DIR"
-```
-
-Then mark the source episodes as consolidated:
-```bash
-cerebro mark-consolidated <episode_id> [<episode_id>...] -p "$CLAUDE_PROJECT_DIR"
+cerebro consolidate --into <new_id> <episode_id> [<episode_id>...] -p "$CLAUDE_PROJECT_DIR"
 ```
 
 ## Step 5: Report

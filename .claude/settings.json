@@ -4,7 +4,7 @@
       {
         "hooks": [
           {
-            "command": "INPUT=$(cat); SID=$(echo \"$INPUT\" | grep -o '\"session_id\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4); rm -f \"/tmp/cerebro-primed-$SID\"; echo \"$(date -Iseconds) compaction completed\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true",
+            "command": "INPUT=$(cat); printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; echo \"$(date -Iseconds) compaction completed\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true",
             "type": "command"
           }
         ],
@@ -15,7 +15,7 @@
       {
         "hooks": [
           {
-            "command": "echo \"$(date -Iseconds) compaction starting\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true",
+            "command": "bd prime",
             "type": "command"
           }
         ],
@@ -24,7 +24,7 @@
       {
         "hooks": [
           {
-            "command": "bd prime",
+            "command": "echo \"$(date -Iseconds) compaction starting\" >> \"$CLAUDE_PROJECT_DIR/.cerebro-compact.log\" 2>/dev/null; true",
             "type": "command"
           }
         ],
@@ -35,11 +35,7 @@
       {
         "hooks": [
           {
-            "command": "cerebro gc --log \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true",
-            "type": "command"
-          },
-          {
-            "command": "cerebro ingest -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true",
+            "command": "INPUT=$(cat); printf '%s' \"$INPUT\" | cerebro hook session-end -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; true",
             "type": "command"
           }
         ],
@@ -50,11 +46,16 @@
       {
         "hooks": [
           {
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; RESULT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null); if [ -n \"$RESULT\" ]; then COUNT=$(echo \"$RESULT\" | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); echo \"Cerebro online. $COUNT memories loaded.\"; echo ''; echo \"$RESULT\"; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi; else echo 'Cerebro: no brain initialized for this project. Run: cerebro init'; fi",
+            "command": "bd prime",
             "type": "command"
-          },
+          }
+        ],
+        "matcher": ""
+      },
+      {
+        "hooks": [
           {
-            "command": "COUNT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); if [ \"$COUNT\" -gt 0 ]; then printf '{\"systemMessage\": \"Cerebro online. %d memories loaded.\"}' \"$COUNT\"; else printf '{\"systemMessage\": \"Cerebro: no brain initialized. Run: cerebro init\"}'; fi",
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null",
             "type": "command"
           }
         ],
@@ -63,7 +64,7 @@
       {
         "hooks": [
           {
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; RESULT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null); if [ -n \"$RESULT\" ]; then COUNT=$(echo \"$RESULT\" | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); echo \"Cerebro online. $COUNT memories loaded.\"; echo ''; echo \"$RESULT\"; fi",
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null",
             "type": "command"
           }
         ],
@@ -72,7 +73,7 @@
       {
         "hooks": [
           {
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; RESULT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null); if [ -n \"$RESULT\" ]; then COUNT=$(echo \"$RESULT\" | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); echo \"Cerebro online. $COUNT memories loaded.\"; echo ''; echo \"$RESULT\"; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi; fi",
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null",
             "type": "command"
           }
         ],
@@ -81,27 +82,18 @@
       {
         "hooks": [
           {
-            "command": "[ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; RESULT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null); if [ -n \"$RESULT\" ]; then COUNT=$(echo \"$RESULT\" | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); echo \"Cerebro online. $COUNT memories loaded.\"; echo ''; echo \"$RESULT\"; if [ -s \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\" ]; then echo ''; echo '--- CEREBRO GC EVICTIONS (review and re-add if needed) ---'; tail -1 \"$CLAUDE_PROJECT_DIR/.cerebro-gc.log\"; fi; fi",
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook post-compact -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null; printf '%s' \"$INPUT\" | cerebro hook prime --event sessionstart -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null",
             "type": "command"
           }
         ],
         "matcher": "clear"
-      },
-      {
-        "hooks": [
-          {
-            "command": "bd prime",
-            "type": "command"
-          }
-        ],
-        "matcher": ""
       }
     ],
     "UserPromptSubmit": [
       {
         "hooks": [
           {
-            "command": "INPUT=$(cat); SID=$(echo \"$INPUT\" | grep -o '\"session_id\":\"[^\"]*\"' | head -1 | cut -d'\"' -f4); if [ -z \"$SID\" ]; then SID=default; fi; S=\"/tmp/cerebro-primed-$SID\"; [ -f \"$S\" ] && exit 0; touch \"$S\"; [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; RESULT=$(cerebro recall --prime --format md -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null); if [ -n \"$RESULT\" ]; then COUNT=$(echo \"$RESULT\" | grep -c \"^## [0-9a-f]\\{8\\} \\[\"); echo \"Cerebro online. $COUNT memories loaded.\"; echo ''; echo \"$RESULT\"; fi",
+            "command": "INPUT=$(cat); [ -n \"$CLAUDE_ENV_FILE\" ] && echo \"export CLAUDE_PROJECT_DIR=$CLAUDE_PROJECT_DIR\" >> \"$CLAUDE_ENV_FILE\"; printf '%s' \"$INPUT\" | cerebro hook prime --event userpromptsubmit -p \"$CLAUDE_PROJECT_DIR\" 2>/dev/null",
             "type": "command"
           }
         ],

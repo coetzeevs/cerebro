@@ -46,6 +46,12 @@ internal/embed/    Embedding provider interface + implementations
 
 This environment uses Cerebro for persistent memory across sessions.
 
+> Using Claude Code? The **cerebro plugin** is the preferred installation path
+> (`/plugin marketplace add coetzeevs/cerebro`, then `/plugin install cerebro@cerebro`).
+> `cerebro init` (which wrote this section) remains fully supported as the
+> cross-tool fallback; the two coexist safely — lifecycle hooks are
+> session-guarded in the binary and fire exactly once per session.
+
 ### Automatic behavior
 - Session start: recent memories are loaded via hook (known to be intermittent — see fallback below)
 - First prompt fallback: if session start hook fails silently, memories are injected on your first prompt
@@ -75,6 +81,11 @@ Use /recall when you:
 - Need context about past decisions or approaches
 - Want to check if a similar problem was encountered before
 - Need to understand project conventions for an unfamiliar area
+
+### Origin identity
+Memory writes are stamped with origin identity (who/what wrote them). Set
+`CEREBRO_ORIGIN_ACTOR` (e.g. `claude-code`) in the environment so agent writes
+classify `recorded`; the session id flows automatically via `CLAUDE_SESSION_ID`.
 
 ### Configuration
 Per-brain defaults can be customized with `cerebro config set <key> <value>`.

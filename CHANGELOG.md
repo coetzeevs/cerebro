@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.4.0] - 2026-08-27
+
 ### Added [agentic-m8m3]
 
 - **Capture-with-approval quarantine inbox** (schema v7). `cerebro inbox add` proposes a candidate memory; `inbox list/approve/discard` curate it. Candidates live in their own `inbox_candidates` table — not in `nodes` at all — so quarantine is structural: no retrieval surface, search lane, prime pass, GC sweep, or export path can see a candidate until approval. Approving promotes the candidate into a real node preserving its id, origin identity, and capture timestamp, then indexes and embeds it (an embed failure follows the normal pending path); discarding deletes the row. Cerebro never auto-commits facts mined from transcripts — the agent proposes (e.g. a SessionEnd skill pass calling `inbox add`), a human or agent approves: Model B, and the quarantine lesson of the team-tier governance research. The v6→v7 migration is a constant-time guarded `CREATE TABLE`. [agentic-m8m3]

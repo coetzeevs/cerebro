@@ -65,6 +65,17 @@ needed, register it deliberately first so the ontology stays curated:
 cerebro relation add <name> --class <structural|topical> -p "$CLAUDE_PROJECT_DIR"
 ```
 
+## Uncertain? Quarantine instead
+
+If you are not confident the memory belongs in the brain (speculative, unverified,
+possibly transient), propose it instead of committing it:
+
+```bash
+cerebro inbox add "<content>" --type <type> -p "$CLAUDE_PROJECT_DIR"
+```
+
+It stays invisible to all retrieval until a human or agent runs `cerebro inbox approve <id>`.
+
 ## Importance Guidelines
 
 - 0.9-1.0: Critical constraints, hard-won lessons, architectural invariants

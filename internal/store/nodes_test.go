@@ -272,3 +272,55 @@ func TestListNodes_SubtypeComposesWithTypeAndStatus(t *testing.T) {
 		}
 	}
 }
+
+// ---- agentic-h6gc: pending-embedding selection + stats predicate ----
+
+func TestPendingEmbeddingNodes_NoVecRowDefinition(t *testing.T) {
+	s := testStore(t)
+	if err := s.InitVectorTable(4); err != nil {
+		t.Fatalf("InitVectorTable: %v", err)
+	}
+	withVec, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "has vector", Importance: 0.5, EmbeddingModel: "m"})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	if err := s.StoreEmbedding(withVec, []float32{1, 0, 0, 0}); err != nil {
+		t.Fatalf("StoreEmbedding: %v", err)
+	}
+	// The undercount case the stats predicate missed: embedding_model SET
+	// (the write path stamps it before embedding) but no vec row landed.
+	noVec, err := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "no vector", Importance: 0.5, EmbeddingModel: "m"})
+	if err != nil {
+		t.Fatalf("AddNode: %v", err)
+	}
+	archived, _ := s.AddNode(&AddNodeOpts{Type: TypeConcept, Content: "archived", Importance: 0.5})
+	if _, err := s.db.Exec(`UPDATE nodes SET status='archived' WHERE id=?`, archived); err != nil {
+		t.Fatalf("archiving: %v", err)
+	}
+
+	pending, err := s.PendingEmbeddingNodes()
+	if err != nil {
+		t.Fatalf("PendingEmbeddingNodes: %v", err)
+	}
+	ids := map[string]bool{}
+	for _, n := range pending {
+		ids[n.ID] = true
+	}
+	if !ids[noVec] {
+		t.Error("vec-less active node not selected (the embedding_model='' undercount)")
+	}
+	if ids[withVec] {
+		t.Error("vectorized node wrongly selected")
+	}
+	if ids[archived] {
+		t.Error("non-active node wrongly selected")
+	}
+
+	stats, err := s.GetStats()
+	if err != nil {
+		t.Fatalf("GetStats: %v", err)
+	}
+	if stats.PendingEmbeddings != len(pending) {
+		t.Errorf("stats.PendingEmbeddings=%d disagrees with PendingEmbeddingNodes=%d (predicates must match)", stats.PendingEmbeddings, len(pending))
+	}
+}

@@ -52,14 +52,65 @@ This environment uses Cerebro for persistent memory across sessions.
 > cross-tool fallback; the two coexist safely — lifecycle hooks are
 > session-guarded in the binary and fire exactly once per session.
 
+### Capability map (what cerebro can do — reach for these without running help)
+<!-- cerebro:capabilities:begin -->
+Always pass `-p "$CLAUDE_PROJECT_DIR"` (EDP estates: `-p "${EDP_BRAIN_ROOT:-$CLAUDE_PROJECT_DIR}"`). `--format json` for structured output. Full detail: `cerebro usage` or `cerebro <cmd> --help`.
+
+**Remember (write)**
+- learned something worth keeping → `cerebro add "<content>" -t episode|concept|procedure|reflection -i 0.0-1.0 [--subtype s]` — search first, reconcile (see supersede/update/reinforce)
+- a file proves the memory → `cerebro add ... --anchor <path> [--anchor-ref <sha>]` — cites the source; recall reports verified|stale|missing
+- new info contradicts/replaces a memory → `cerebro supersede <old-id> "<new content>" -t <type>` — old stays as history, new takes over
+- refine an existing memory in place → `cerebro update <id> --content|--importance|--subtype`
+- a memory proved right again (no new info) → `cerebro reinforce <id>` — boosts retention
+- unsure it belongs in the brain yet → `cerebro inbox add "<content>"` — quarantined until `inbox approve <id>` / `inbox discard <id>`; `inbox list` to review
+- two memories are related → `cerebro edge <src-id> <dst-id> <relation>` — use `cerebro relation list` names; register new ones deliberately
+- curate the relation vocabulary → `cerebro relation add <name> [--class c] | list | rm <name>`
+
+**Retrieve (read)**
+- need context on a topic → `cerebro recall "<query>"` — composite-scored, THE default retrieval; `--prime` for session-start selection
+- pure semantic similarity → `cerebro search "<query>" [--limit N --threshold 0.x]` — vector lane only
+- inspect one memory + its edges → `cerebro get <id> [--with-provenance] [--as-of <time>]` — JSON carries origin/provenance/anchor status
+- browse or filter → `cerebro list [--type t] [--status s] [--subtype x]`
+
+**Feedback (close the loop — do this after acting on a recall)**
+- a recalled memory helped → `cerebro outcome <id> --success` — boosts its future ranking
+- a recalled memory misled you → `cerebro outcome <id> --failure` — sinks it (and consider supersede)
+
+**Distill & maintain**
+- many episodes accumulated → `cerebro consolidate --suggest` to see clusters; synthesize a concept with add, then `cerebro consolidate --into <new-id> <episode-ids...>` (wires provenance, marks sources)
+- episodes distilled elsewhere → `cerebro mark-consolidated <ids...>` — status flip only, no provenance
+- scrub a subject before sharing a brain → `cerebro forget --subject "<pattern>" [--subtype s] [--hard]` — DRY-RUN by default; add --apply to execute
+- vectors missing (import, embed failures) → `cerebro embed --pending` — backfills; oversized content chunks automatically
+- evict decayed memories → `cerebro gc [--dry-run]` — score-based, archives
+- brain health check → `cerebro stats` — counts, schema, pending embeddings
+
+**Share & lifecycle**
+- memory useful across all projects → `cerebro promote <id>` — copies to the global brain with provenance
+- move/backup brains → `cerebro export [--format json|sql|sqlite]` — full-fidelity bundle
+- restore/merge a bundle → `cerebro import <file> [--on-conflict skip|replace]`
+- snapshot before risky work → `cerebro backup`
+- consolidate duplicate brains / formats → `cerebro migrate --realpath-hashes [--dry-run]`
+- new project setup → `cerebro init -p <dir>` — brain + hooks + skills + this capability map in CLAUDE.md
+
+**Operator/infra (rarely agent-invoked)**
+- see this map again → `cerebro usage`
+- tune per-brain defaults → `cerebro config list|get|set` — thresholds, seams (e.g. indegree_bonus_enabled)
+- recall-quality measurement → `cerebro eval` — A/B protocol in docs/evals/README.md
+- session metrics → `cerebro ingest`
+- metrics dashboard → `cerebro dashboard`
+- lifecycle hooks (wired by init/plugin) → `cerebro hook prime|post-compact|session-end` — session-guarded, not for manual use
+- premature-stop detector (opt-in, default off) → `cerebro stop-guard` — inert unless stop_guard_enabled=true AND a Stop hook is wired
+- Pi runtime config snippet → `cerebro pi-init`
+<!-- cerebro:capabilities:end -->
+
 ### Automatic behavior
-- Session start: recent memories are loaded via hook (known to be intermittent — see fallback below)
-- First prompt fallback: if session start hook fails silently, memories are injected on your first prompt
-- Post-compaction: sentinel is cleared so memories are re-loaded on next prompt after compaction
-- Session end: garbage collection runs automatically
+- Session start: recent memories are loaded via hook (reliable additionalContext channel)
+- First prompt fallback: if the session-start prime was not delivered, memories are injected on your first prompt
+- Post-compaction: the primed flag is cleared so memories re-load after compaction
+- Session end: garbage collection and metrics ingest run automatically
 
 ### Post-compaction recovery
-If you don't see Cerebro memories in your context after compaction (no primed memories in system reminders), proactively run `/recall` to restore context. This is a safety net for known hook injection bugs.
+If you don't see Cerebro memories in your context after compaction (no primed memories in system reminders), proactively run `/recall` to restore context.
 
 ### When to remember
 Use /remember proactively when you:
@@ -70,17 +121,15 @@ Use /remember proactively when you:
 - Complete a significant task (capture the approach and outcome)
 - Are about to lose context (compaction warning, session ending)
 
-### Project directory
-When invoking cerebro commands directly (outside /recall and /remember skills),
-always pass `-p "$CLAUDE_PROJECT_DIR"` to ensure the correct brain is used.
-The `$CLAUDE_PROJECT_DIR` env var is set by Claude Code to the session start directory.
-
 ### When to recall
 Use /recall when you:
 - Start working on a new area of the codebase
 - Need context about past decisions or approaches
 - Want to check if a similar problem was encountered before
 - Need to understand project conventions for an unfamiliar area
+
+### Close the loop
+After acting on a recalled memory, record the outcome: `cerebro outcome <id> --success` when it helped, `--failure` when it misled (then consider superseding it). This is how the brain learns which memories to surface.
 
 ### Origin identity
 Memory writes are stamped with origin identity (who/what wrote them). Set

@@ -26,7 +26,10 @@ type nodeWithProvenance struct {
 	// OriginStatus (agentic-goc7): recorded|legacy|unknown, computed against
 	// the origin-convention boundary. Always present in get JSON, mirroring
 	// provenance_status; the raw origin_* fields ride on the embedded Node.
-	OriginStatus string                `json:"origin_status"`
+	OriginStatus string `json:"origin_status"`
+	// AnchorStatus (agentic-k8an): verified|stale|missing for anchored
+	// memories, omitted for anchorless ones — the cite-and-verify signal.
+	AnchorStatus string                `json:"anchor_status,omitempty"`
 	Provenance   []provenanceChainItem `json:"provenance,omitempty"`
 }
 
@@ -35,6 +38,7 @@ type scoredNodeWithProvenance struct {
 	store.ScoredNode
 	ProvenanceStatus string                `json:"provenance_status"`
 	OriginStatus     string                `json:"origin_status"`
+	AnchorStatus     string                `json:"anchor_status,omitempty"`
 	Provenance       []provenanceChainItem `json:"provenance,omitempty"`
 }
 
@@ -44,6 +48,7 @@ type nodeWithProvenanceStatus struct {
 	store.Node
 	ProvenanceStatus string `json:"provenance_status"`
 	OriginStatus     string `json:"origin_status"`
+	AnchorStatus     string `json:"anchor_status,omitempty"`
 }
 
 // provenanceStatusFor returns the provenance_status for a single id, defaulting

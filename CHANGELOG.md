@@ -4,6 +4,23 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added [agentic-m8m3]
+
+- **Capture-with-approval quarantine inbox** (schema v7). `cerebro inbox add` proposes a candidate memory; `inbox list/approve/discard` curate it. Candidates live in their own `inbox_candidates` table — not in `nodes` at all — so quarantine is structural: no retrieval surface, search lane, prime pass, GC sweep, or export path can see a candidate until approval. Approving promotes the candidate into a real node preserving its id, origin identity, and capture timestamp, then indexes and embeds it (an embed failure follows the normal pending path); discarding deletes the row. Cerebro never auto-commits facts mined from transcripts — the agent proposes (e.g. a SessionEnd skill pass calling `inbox add`), a human or agent approves: Model B, and the quarantine lesson of the team-tier governance research. The v6→v7 migration is a constant-time guarded `CREATE TABLE`. [agentic-m8m3]
+
+### Added [agentic-dpgh]
+
+- **`cerebro forget --subject <pattern>` — subject-scoped bulk forget, dry-run by default.** Selects every non-archived memory whose content contains the pattern (case-insensitive; `--subtype` narrows) and forgets it in one transaction: edges, embedding, and FTS presence are removed so nothing stays retrievable through any lane; the node archives for audit or vanishes with `--hard`. Nothing mutates without an explicit `--apply`. Use case: scrubbing a subject from a brain before sharing or handover. [agentic-dpgh]
+
+### Added [agentic-k8an]
+
+- **Cite-and-verify source anchors.** `cerebro add --anchor <path> [--anchor-ref <ref>]` cites the file that proves a memory: the path is stored as given (relative stays portable) with the sha256 of its content at write time, in metadata under the reserved `anchor` key — no schema change, export/import carry it free. Anchoring a nonexistent file fails loudly before any write. At read time `get`/`recall`/`list` JSON surface `anchor_status`: `verified` (resolves, hash matches), `stale` (content changed since citation), `missing` (file gone) — the curator-free staleness signal of the Copilot-Memory pattern, and the verifiable-external-pointer base the memory-poisoning literature calls for. [agentic-k8an]
+
+### Added [agentic-do71]
+
+- **Outcome- and citation-based reinforcement.** `cerebro outcome <id> --success|--failure` records the agent's verdict on whether a recalled memory helped; counters live in metadata and multiply the composite score (+0.10·ln(1+successes), −0.15·ln(1+failures), floored at 0.2 so failed memories stay findable for deliberate supersession). In-degree now gives the structural score component a baseline for plain search results (it was always 0 outside graph expansion): citation-class incoming edges (`derived_from`, `supports`) ln-scale into the existing 0.15 structural weight, behind the `indegree_bonus_enabled` config seam. Eval-validated (t3c9 same-session pairs, 604-node brain, 18 queries): the shipped citation class shows zero regression; the broader variants tried and rejected with data (all-relations: recall@5 −0.074; +`learned_from`: −0.046) — re-run the A/B via the seam as consolidation densifies `derived_from`. [agentic-do71]
+
+
 ### Added [agentic-h6gc]
 
 - **`cerebro embed --pending` — the backfill Import's contract always assumed existed.** Embeds every active node lacking a `vec_nodes` row (failed write-time embeds, imported nodes), reports per-node results, and clears `has_pending_embeddings` only at zero remaining; idempotent. **Oversized content now embeds**: content beyond ~6KB chars (the installed Ollama hard-fails around 6–7.8KB) is rune-safely chunked, embedded per chunk, mean-pooled, and L2-normalized — in the shared embed path, so large memories vectorize at `add`/`update` time too, not just via backfill. Embed failures in `Add`/`Update`/`Supersede` are no longer silent: a stderr warning names the node and the recovery command. `stats`' pending count now uses the same no-vec-row predicate (the old `embedding_model=''` test undercounted, since the write path stamps the model before embedding succeeds). Live: the estate brain's two permanently-unembeddable ~8KB memories gained vectors on first run and are now reachable through the vector lane. [agentic-h6gc]

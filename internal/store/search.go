@@ -133,8 +133,14 @@ func (s *Store) VectorSearch(vec []float32, limit int, threshold float64) ([]Sco
 			break
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return results, rows.Err()
+	// In-degree structural baseline (agentic-do71): cited nodes carry a
+	// non-zero structural term even without graph expansion.
+	s.applyIndegreeStructural(results)
+	return results, nil
 }
 
 // CosineSimilarity returns the cosine similarity between two float32 vectors.
@@ -251,7 +257,9 @@ func compositeScore(n *Node, similarity, structural float64) float64 {
 	daysSinceAccess := time.Since(n.LastAccessed).Hours() / 24
 	recency := math.Exp(-n.DecayRate * daysSinceAccess)
 
-	return 0.35*relevance + 0.25*importance + 0.25*recency + 0.15*structural
+	// Outcome multiplier (agentic-do71): agent-recorded success/failure
+	// counters scale the whole score; neutral 1.0 without signal.
+	return (0.35*relevance + 0.25*importance + 0.25*recency + 0.15*structural) * outcomeFactor(n.Metadata)
 }
 
 // ExpandGraph performs 1-hop graph expansion on search results.

@@ -23,6 +23,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
 	"strings"
 
@@ -42,6 +43,11 @@ var addBeadsIdFlag string
 
 // addOriginFlags carries the --origin-* overrides for `cerebro add` (goc7).
 var addOriginFlags originFlags
+
+// addAnchorFlag / addAnchorRefFlag carry the cite-and-verify source anchor
+// (agentic-k8an): the file that proves this memory, hashed at write time.
+var addAnchorFlag string
+var addAnchorRefFlag string
 
 // beadsIdRegexp is the HS-029 canonical regex, byte-identical to:
 //
@@ -68,6 +74,10 @@ func init() {
 	// --beads-id: optional beads task id for forensic linkage (HS-039).
 	// Value is trimmed and validated against the HS-029 canonical regex before persisting.
 	cmd.Flags().StringVar(&addBeadsIdFlag, "beads-id", "", "Beads task id to tag this memory with (forensic linkage); must match ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$")
+	cmd.Flags().StringVar(&addAnchorFlag, "anchor", "",
+		"Source anchor: file path (relative to the project dir) that proves this memory; hashed at write, re-verified at recall (k8an)")
+	cmd.Flags().StringVar(&addAnchorRefFlag, "anchor-ref", "",
+		"Optional ref label stored with the anchor (e.g. a commit SHA)")
 	addOriginFlags.register(cmd)
 	rootCmd.AddCommand(cmd)
 }
@@ -79,6 +89,24 @@ func runAdd(cmd *cobra.Command, args []string) error {
 	}
 
 	content := strings.Join(args, " ")
+
+	// Anchor validation happens BEFORE the brain opens: a citation to a file
+	// that does not exist is a dead pointer and must fail loudly, with no
+	// store side effects (k8an).
+	metaMap := map[string]any{}
+	if addAnchorFlag != "" {
+		projectDir := resolveProjectDir()
+		if _, err := os.Stat(resolveAnchorPath(addAnchorFlag, projectDir)); err != nil {
+			return fmt.Errorf("--anchor %q does not resolve: %w", addAnchorFlag, err)
+		}
+		am := anchorMetadata(projectDir, addAnchorFlag, addAnchorRefFlag)
+		if am == nil {
+			return fmt.Errorf("--anchor %q could not be hashed", addAnchorFlag)
+		}
+		for k, v := range am {
+			metaMap[k] = v
+		}
+	}
 
 	b, err := openBrain()
 	if err != nil {
@@ -105,15 +133,18 @@ func runAdd(cmd *cobra.Command, args []string) error {
 		if !beadsIdRegexp.MatchString(beadsId) {
 			return fmt.Errorf("invalid --beads-id: must match canonical pattern ^[a-z][a-z0-9-]{0,31}-[0-9a-z]{3,32}$")
 		}
+		// beadsId wins on key collision per the locked HS-039 merge contract.
+		metaMap["beadsId"] = beadsId
+	}
+	if len(metaMap) > 0 {
 		// JSON encoding via json.Marshal — NOT fmt.Sprintf — per TL-N3.
-		// This is defence-in-depth; the regex above already bounds the value.
-		meta, err := json.Marshal(map[string]string{"beadsId": beadsId})
+		meta, err := json.Marshal(metaMap)
 		if err != nil {
-			return fmt.Errorf("encoding beadsId metadata: %w", err)
+			return fmt.Errorf("encoding metadata: %w", err)
 		}
 		opts = append(opts, brain.WithMetadata(json.RawMessage(meta)))
 	}
-	// Empty post-trim → flag treated as absent. No WithMetadata call. AC3 back-compat.
+	// No anchor and empty post-trim beads-id → no WithMetadata call. AC3 back-compat.
 
 	id, err := b.Add(content, store.NodeType(nodeType), opts...)
 	if err != nil {

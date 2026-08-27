@@ -460,8 +460,8 @@ func TestScaffoldCLAUDEMD_ForceReplacesSection(t *testing.T) {
 	}
 
 	// New template content should be present
-	if !strings.Contains(content, "### Project directory") {
-		t.Error("new template content missing (expected ### Project directory)")
+	if !strings.Contains(content, "### Capability map") {
+		t.Error("new template content missing (expected ### Capability map)")
 	}
 }
 
@@ -632,7 +632,7 @@ func TestScaffoldCLAUDEMD_ForcePreservesTrailingSections(t *testing.T) {
 	}
 
 	// New template content should be present
-	if !strings.Contains(content, "### Project directory") {
+	if !strings.Contains(content, "### Capability map") {
 		t.Error("new template content missing")
 	}
 

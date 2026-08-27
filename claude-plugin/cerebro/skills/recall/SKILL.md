@@ -30,3 +30,12 @@ If still insufficient, try a broader search with lower threshold:
 ```bash
 cerebro search "$ARGUMENTS" --limit 20 --threshold 0.3 --format md -p "$CLAUDE_PROJECT_DIR"
 ```
+
+## Close the loop
+
+After acting on retrieved memories, record outcomes so ranking improves:
+
+```bash
+cerebro outcome <id> --success -p "$CLAUDE_PROJECT_DIR"   # it helped
+cerebro outcome <id> --failure -p "$CLAUDE_PROJECT_DIR"   # it misled (consider supersede)
+```

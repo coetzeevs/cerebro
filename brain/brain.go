@@ -274,6 +274,20 @@ func (b *Brain) Consolidate(intoID string, episodeIDs []string) error {
 	return b.store.ConsolidateInto(intoID, episodeIDs)
 }
 
+// RecordOutcome records an agent-supplied outcome signal (success/failure)
+// on a memory — agentic-do71. Counters live in metadata and multiply the
+// composite score at retrieval.
+func (b *Brain) RecordOutcome(id string, success bool) error {
+	return b.store.RecordOutcome(id, success)
+}
+
+// ForgetSubject bulk-forgets nodes about a subject (content substring,
+// optional subtype), cascading embeddings/FTS/edges — agentic-dpgh. dryRun
+// selects without writing; hard deletes rows instead of archiving.
+func (b *Brain) ForgetSubject(pattern, subtype string, hard, dryRun bool) (*store.ForgetResult, error) {
+	return b.store.ForgetSubject(pattern, subtype, hard, dryRun)
+}
+
 // ConsolidationCandidates surfaces rollup candidates — active episodes
 // grouped by subtype, biggest groups first, oldest first within a group
 // (agentic-eq7a). The agent synthesizes; cerebro only selects.

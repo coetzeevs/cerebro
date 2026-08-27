@@ -49,6 +49,12 @@ var configRegistry = map[string]configParam{
 		Default:     "0.3",
 		Validate:    validateUnitFloat,
 	},
+	"indegree_bonus_enabled": {
+		Key:         "indegree_bonus_enabled",
+		Description: "In-degree structural baseline in search scoring (agentic-do71); default on, set false to disable (t3c9 A/B seam)",
+		Default:     "true",
+		Validate:    validateBool,
+	},
 	"stop_guard_enabled": {
 		Key:         "stop_guard_enabled",
 		Description: "Enable the stop-guard premature-stop detector (disabled by default; operator ruling 2026-08-25 — the hook must also be wired in settings.json)",
@@ -431,6 +437,7 @@ func configRegistryKeys() []string {
 		"search_limit",
 		"search_threshold",
 		"recall_threshold",
+		"indegree_bonus_enabled",
 		"stop_guard_enabled",
 		"rerank_enabled",
 		"rerank_command",

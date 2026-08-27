@@ -149,6 +149,10 @@ func (s *Store) KeywordSearch(query string, limit int) ([]ScoredNode, error) {
 	// value and uses rank instead, so the normalisation is purely informational.
 	normaliseBM25Signal(results, rawScores)
 
+	// In-degree structural baseline (agentic-do71) — parity with the vector
+	// lane; the fusion layer uses rank, but keyword-only consumers see Score.
+	s.applyIndegreeStructural(results)
+
 	return results, nil
 }
 

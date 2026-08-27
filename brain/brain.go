@@ -274,6 +274,55 @@ func (b *Brain) Consolidate(intoID string, episodeIDs []string) error {
 	return b.store.ConsolidateInto(intoID, episodeIDs)
 }
 
+// AddCandidate quarantines a proposed memory in the inbox (agentic-m8m3):
+// invisible to every retrieval surface until explicitly approved. No
+// embedding happens at capture.
+func (b *Brain) AddCandidate(content string, nodeType store.NodeType, opts ...AddOption) (string, error) {
+	o := addDefaults()
+	for _, fn := range opts {
+		fn(&o)
+	}
+	return b.store.AddCandidateNode(&store.AddNodeOpts{
+		Type:          nodeType,
+		Subtype:       o.Subtype,
+		Content:       content,
+		Metadata:      o.Metadata,
+		Importance:    o.Importance,
+		OriginActor:   o.OriginActor,
+		OriginChannel: o.OriginChannel,
+		OriginSession: o.OriginSession,
+		OriginHost:    o.OriginHost,
+	})
+}
+
+// ListCandidates returns the quarantine inbox, oldest first.
+func (b *Brain) ListCandidates() ([]store.Node, error) {
+	return b.store.ListCandidates()
+}
+
+// ApproveCandidate activates an inbox candidate (id, origin, and capture
+// time preserved) and embeds it; an embed failure follows the normal
+// pending-embeddings path.
+func (b *Brain) ApproveCandidate(id string) error {
+	if err := b.store.ApproveCandidate(id); err != nil {
+		return err
+	}
+	n, err := b.store.GetNode(id)
+	if err != nil {
+		return err
+	}
+	if err := b.embedAndStore(id, n.Content); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: embedding failed for %s: %v (approved; run `cerebro embed --pending`)\n", id[:8], err)
+		_ = b.store.SetMeta("has_pending_embeddings", "true")
+	}
+	return nil
+}
+
+// DiscardCandidate removes an inbox candidate entirely.
+func (b *Brain) DiscardCandidate(id string) error {
+	return b.store.DiscardCandidate(id)
+}
+
 // RecordOutcome records an agent-supplied outcome signal (success/failure)
 // on a memory — agentic-do71. Counters live in metadata and multiply the
 // composite score at retrieval.

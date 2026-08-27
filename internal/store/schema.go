@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-const schemaVersion = "6"
+const schemaVersion = "7"
 
 // applySchema creates all tables and indexes if they don't exist.
 func (s *Store) applySchema() error {
@@ -106,6 +106,21 @@ func (s *Store) applySchema() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
 		`INSERT OR IGNORE INTO relations (name) VALUES ('derived_from'), ('supports'), ('contradicts'), ('supersedes')`,
+		// Capture-with-approval quarantine inbox (agentic-m8m3): candidates
+		// live OUTSIDE nodes so no retrieval surface can see them.
+		`CREATE TABLE IF NOT EXISTS inbox_candidates (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL CHECK (type IN ('episode', 'concept', 'procedure', 'reflection')),
+			subtype TEXT,
+			content TEXT NOT NULL,
+			metadata JSON,
+			importance REAL DEFAULT 0.5,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			origin_actor TEXT,
+			origin_channel TEXT,
+			origin_session TEXT,
+			origin_host TEXT
+		)`,
 	}
 
 	for _, stmt := range stmts {
@@ -486,6 +501,21 @@ func (s *Store) migrateSchema() error {
 				created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 			)`,
 			`INSERT OR IGNORE INTO relations (name) VALUES ('derived_from'), ('supports'), ('contradicts'), ('supersedes')`,
+			// Capture-with-approval quarantine inbox (agentic-m8m3): candidates
+			// live OUTSIDE nodes so no retrieval surface can see them.
+			`CREATE TABLE IF NOT EXISTS inbox_candidates (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL CHECK (type IN ('episode', 'concept', 'procedure', 'reflection')),
+			subtype TEXT,
+			content TEXT NOT NULL,
+			metadata JSON,
+			importance REAL DEFAULT 0.5,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			origin_actor TEXT,
+			origin_channel TEXT,
+			origin_session TEXT,
+			origin_host TEXT
+		)`,
 			`CREATE INDEX IF NOT EXISTS idx_nodes_origin_actor ON nodes(origin_actor)`,
 			`CREATE INDEX IF NOT EXISTS idx_nodes_origin_host ON nodes(origin_host)`,
 		} {
@@ -514,9 +544,47 @@ func (s *Store) migrateSchema() error {
 		version = "6"
 	}
 
+	// v6 -> v7: the quarantine inbox table (agentic-m8m3). A pure CREATE
+	// TABLE IF NOT EXISTS — no ALTER, no backfill, constant-time; same
+	// tx-guarded idiom as prior migrations. Open() runs migrations only, so
+	// the table must be created here as well as in the fresh DDL.
+	if version == "6" {
+		tx, err := s.db.Begin()
+		if err != nil {
+			return fmt.Errorf("beginning v6->v7 migration: %w", err)
+		}
+		defer func() { _ = tx.Rollback() }()
+
+		if _, err := tx.Exec(`CREATE TABLE IF NOT EXISTS inbox_candidates (
+			id TEXT PRIMARY KEY,
+			type TEXT NOT NULL CHECK (type IN ('episode', 'concept', 'procedure', 'reflection')),
+			subtype TEXT,
+			content TEXT NOT NULL,
+			metadata JSON,
+			importance REAL DEFAULT 0.5,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			origin_actor TEXT,
+			origin_channel TEXT,
+			origin_session TEXT,
+			origin_host TEXT
+		)`); err != nil {
+			return fmt.Errorf("migrating v6->v7 (inbox_candidates): %w", err)
+		}
+		if _, err := tx.Exec(
+			`INSERT INTO schema_meta (key, value) VALUES ('schema_version', '7')
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+		); err != nil {
+			return fmt.Errorf("updating schema version to 7: %w", err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("committing v6->v7 migration: %w", err)
+		}
+		version = "7"
+	}
+
 	// version is intentionally re-assigned above for clarity and to keep each
 	// migration block self-contained; the value is consumed only by subsequent
-	// blocks (none follow v6 today).
+	// blocks (none follow v7 today).
 	_ = version
 
 	return nil

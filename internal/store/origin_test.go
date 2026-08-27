@@ -14,8 +14,8 @@ func TestFreshInitHasOriginAtV6(t *testing.T) {
 	s := testStore(t)
 
 	v, err := s.GetMeta("schema_version")
-	if err != nil || v != "6" {
-		t.Fatalf("schema_version: got %q err=%v, want \"6\"", v, err)
+	if err != nil || v != "7" {
+		t.Fatalf("schema_version: got %q err=%v, want \"7\"", v, err)
 	}
 	cols := nodeColumns(t, s)
 	for _, c := range []string{"origin_actor", "origin_channel", "origin_session", "origin_host"} {
@@ -240,8 +240,8 @@ func TestMigrationFromV5AddsOriginAndRelations(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.Close() })
 
-	if v, _ := s.GetMeta("schema_version"); v != "6" {
-		t.Fatalf("migrated version: got %q want 6", v)
+	if v, _ := s.GetMeta("schema_version"); v != "7" {
+		t.Fatalf("migrated version: got %q want 7", v)
 	}
 	cols := nodeColumns(t, s)
 	for _, c := range []string{"origin_actor", "origin_channel", "origin_session", "origin_host"} {

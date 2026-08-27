@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.5.0] - 2026-08-27
+
 ### Added [agentic-trko]
 
 - **`cerebro usage` — the at-load capability map.** Agents were discovering cerebro by help-spelunking mid-task; now one command renders a compact *situation → command → contract* map covering every registered command (a CI drift-guard fails the build if a command ships without an entry, or an entry goes stale). The CLAUDE.md section `cerebro init` writes embeds the **same rendered block** between markers, byte-equality-tested against the binary's renderer — so the full capability surface is in the agent's context from session load and can never drift from the tool. Skills refreshed to exercise the newer surfaces: `/recall` closes the loop with `cerebro outcome`, `/remember` quarantines uncertain candidates via `inbox add`; plugin skill copies and the `/cerebro:rules` skill regenerated in lockstep. [agentic-trko]

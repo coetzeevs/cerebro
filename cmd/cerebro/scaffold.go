@@ -26,6 +26,9 @@ var skillConsolidateTemplate []byte
 //go:embed templates/skill_develop.md
 var skillDevelopTemplate []byte
 
+//go:embed templates/skill_dream.md
+var skillDreamTemplate []byte
+
 //go:embed templates/claudemd_section.md
 var claudeMDSectionTemplate []byte
 
@@ -199,7 +202,7 @@ func mergeHooks(existing, template map[string]any) map[string]any {
 	return existing
 }
 
-// scaffoldSkills creates .claude/skills/{remember,recall,consolidate}/SKILL.md files.
+// scaffoldSkills creates .claude/skills/{remember,recall,consolidate,develop,dream}/SKILL.md files.
 // Skips any skill file that already exists unless force is true.
 // Returns count of files written.
 func scaffoldSkills(projectDir string, force bool) (int, error) {
@@ -208,6 +211,7 @@ func scaffoldSkills(projectDir string, force bool) (int, error) {
 		"recall":      skillRecallTemplate,
 		"consolidate": skillConsolidateTemplate,
 		"develop":     skillDevelopTemplate,
+		"dream":       skillDreamTemplate,
 	}
 
 	created := 0

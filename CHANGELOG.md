@@ -4,6 +4,14 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Added [agentic-modb]
+
+- **`/dream` — the off-hot-path consolidation pass.** A new skill (init template + byte-identical `/cerebro:dream` plugin copy, drift-guarded in lockstep) packaging the proven memory-maintenance workflow into a repeatable, operator-invoked pass: preconditions snapshot → backup → eval BEFORE + ground-truth exclusion → per-candidate inbox review → candidate selection (`consolidate --suggest` + thematic carving) → dedup-first synthesis with provenance (`consolidate --into`, supersede for contradictions, absolute dates) → bounded prune (dry-run gated; aborts when the effective `gc_threshold` exceeds 0.05 or the eviction count exceeds max(10, 2% of active nodes); never passes `--threshold`) → eval AFTER, outcomes, density report. Cerebro never calls an LLM — the agent owns every judgement, cerebro provides selection, atomic wiring, and the ruler (Model B; ADR-017 records why this is a skill, not a `cerebro dream` command). Memory-derived content passes through scratch files (`"$(cat file)"`) so embedded backticks/`$(…)` cannot execute. Plugin 1.1.1 → 1.2.0. [agentic-modb]
+
+### Fixed [agentic-modb]
+
+- **`consolidate --into` docs matched to the code: the target must EXIST (any type), not "resolve as an episode".** The command help, the `Brain.Consolidate` godoc, the `--into` flag help, and the README all claimed the into-node must be an episode; the fail-closed validation (`internal/store/consolidate.go`) checks existence only for the target — sources are the episode-gated side. Wiring episodes into an existing concept/procedure/reflection is the dedup-first mechanic the `/dream` pass depends on. [agentic-modb]
+
 ## [3.5.0] - 2026-08-27
 
 ### Added [agentic-trko]

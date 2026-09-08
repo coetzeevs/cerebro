@@ -30,7 +30,7 @@ brew install --cask coetzeevs/tap/cerebro
 With the CLI installed, add the plugin for lifecycle hooks (session-start
 recall priming, post-compaction recovery, session-end GC) and the
 `/cerebro:remember`, `/cerebro:recall`, `/cerebro:consolidate`,
-`/cerebro:develop`, `/cerebro:rules` skills:
+`/cerebro:dream`, `/cerebro:develop`, `/cerebro:rules` skills:
 
 ```
 /plugin marketplace add coetzeevs/cerebro
@@ -161,8 +161,9 @@ cerebro recall "query" --provenance-depth 3
 cerebro add "source memory" --type episode --provenance-root
 ```
 
-`consolidate --into` is atomic and fail-closed (the into-node and every source
-must resolve as an episode, else a non-zero exit with no partial write) and
+`consolidate --into` is atomic and fail-closed (the into-node must exist — any
+type — and every source must resolve as an episode, else a non-zero exit with
+no partial write) and
 idempotent (re-running writes no duplicate edges). It is distinct from
 `mark-consolidated`, which only flips status and writes no edges.
 
@@ -221,7 +222,7 @@ cerebro recall --global "deployment patterns"
 `cerebro init` scaffolds everything needed for [Claude Code](https://docs.anthropic.com/en/docs/claude-code):
 
 - **Hooks** — memory recall on session start, GC on exit, stop-guard to prevent premature stopping
-- **Skills** — `/remember`, `/recall`, `/consolidate`, and `/develop` (structured implementation workflow)
+- **Skills** — `/remember`, `/recall`, `/consolidate`, `/dream` (off-hot-path consolidation pass), and `/develop` (structured implementation workflow)
 - **CLAUDE.md** — project instructions for when/how to use memory
 
 This makes memory transparent to the agent — it just works across sessions without manual setup.

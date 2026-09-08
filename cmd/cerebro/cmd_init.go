@@ -23,7 +23,7 @@ func init() {
 
 By default, this also scaffolds Claude Code integration files:
   - .claude/settings.json  (session hooks)
-  - .claude/skills/        (remember, recall, consolidate skills)
+  - .claude/skills/        (remember, recall, consolidate, develop, dream skills)
   - CLAUDE.md              (behavioral instructions section)
 
 Use --skip-integration to create only the database without integration files.`,

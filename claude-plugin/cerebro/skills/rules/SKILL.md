@@ -96,6 +96,9 @@ Use /recall when you:
 - Want to check if a similar problem was encountered before
 - Need to understand project conventions for an unfamiliar area
 
+### When to dream
+Episodes piling up across many sessions → run `/dream` (or `/cerebro:dream`): the full off-hot-path consolidation pass — inbox review, dedup-first consolidation with provenance, prune, measure. Manual, at natural maintenance points — never on a schedule.
+
 ### Close the loop
 After acting on a recalled memory, record the outcome: `cerebro outcome <id> --success` when it helped, `--failure` when it misled (then consider superseding it). This is how the brain learns which memories to surface.
 

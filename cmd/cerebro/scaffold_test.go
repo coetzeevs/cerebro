@@ -272,12 +272,12 @@ func TestScaffoldSkills_NewFiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scaffoldSkills: %v", err)
 	}
-	if created != 4 {
-		t.Errorf("expected 4 skills created, got %d", created)
+	if created != 5 {
+		t.Errorf("expected 5 skills created, got %d", created)
 	}
 
 	// Verify all skill files exist
-	for _, skill := range []string{"remember", "recall", "consolidate", "develop"} {
+	for _, skill := range []string{"remember", "recall", "consolidate", "develop", "dream"} {
 		path := filepath.Join(projectDir, ".claude", "skills", skill, "SKILL.md")
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			t.Errorf("skill file not created: %s", path)
@@ -302,8 +302,8 @@ func TestScaffoldSkills_ExistingSkipped(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scaffoldSkills: %v", err)
 	}
-	if created != 3 {
-		t.Errorf("expected 3 skills created (remember skipped), got %d", created)
+	if created != 4 {
+		t.Errorf("expected 4 skills created (remember skipped), got %d", created)
 	}
 
 	// Existing file should not be overwritten
@@ -330,8 +330,8 @@ func TestScaffoldSkills_ForceOverwrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("scaffoldSkills with force: %v", err)
 	}
-	if created != 4 {
-		t.Errorf("expected 4 skills created (force=true), got %d", created)
+	if created != 5 {
+		t.Errorf("expected 5 skills created (force=true), got %d", created)
 	}
 
 	// Existing file should be overwritten with template content

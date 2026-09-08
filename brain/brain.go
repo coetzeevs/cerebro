@@ -266,8 +266,9 @@ func (b *Brain) MarkConsolidated(ids []string) error {
 
 // Consolidate flips each source episode to consolidated AND auto-writes a
 // derived_from edge from the into-node to each source, in a single atomic
-// transaction (agentic-lbjg AC3). Fail-closed: the into-node and every source
-// must resolve as an episode, else a non-zero error with zero partial write.
+// transaction (agentic-lbjg AC3). Fail-closed: the into-node must exist (any
+// type) and every source must resolve as an episode, else a non-zero error
+// with zero partial write.
 // Idempotent (UNIQUE(source,target,relation) upsert). This is additive — the
 // existing status-only MarkConsolidated is unchanged.
 func (b *Brain) Consolidate(intoID string, episodeIDs []string) error {

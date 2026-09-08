@@ -20,10 +20,12 @@ a built-in 'derived_from' provenance edge from the --into node to each source
 episode, so the synthesized concept/procedure/reflection carries structural
 provenance back to the episodes it came from (agentic-lbjg).
 
-The operation is atomic and fail-closed: the --into node and every source must
-resolve as an episode, else the whole command is rejected with a non-zero exit
-and no partial write. It is idempotent — re-running writes no duplicate edges and
-re-asserts the provenance of already-consolidated episodes without error.
+The operation is atomic and fail-closed: the --into node must EXIST (any type —
+wiring episodes into an existing concept/procedure/reflection is the dedup-first
+mechanic) and every source must resolve as an episode, else the whole command is
+rejected with a non-zero exit and no partial write. It is idempotent — re-running
+writes no duplicate edges and re-asserts the provenance of already-consolidated
+episodes without error.
 
 This is distinct from 'mark-consolidated', which only flips episode status and
 writes no edges. Use 'consolidate --into' when you have a concept to attribute
@@ -40,7 +42,7 @@ does the synthesis; cerebro only selects and wires provenance.`,
 		RunE: runConsolidate,
 	}
 	cmd.Flags().StringVar(&consolidateIntoFlag, "into", "",
-		"Concept/procedure/reflection node ID the episodes consolidate into")
+		"Existing node ID (any type) the episodes consolidate into — prefer an existing adequate node over minting a new one")
 	cmd.Flags().BoolVar(&consolidateSuggestFlag, "suggest", false,
 		"List consolidation candidates (active episodes grouped by subtype) instead of consolidating")
 	cmd.Flags().IntVar(&consolidateSuggestLimitFlag, "limit", 10,

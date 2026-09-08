@@ -161,8 +161,9 @@ cerebro recall "query" --provenance-depth 3
 cerebro add "source memory" --type episode --provenance-root
 ```
 
-`consolidate --into` is atomic and fail-closed (the into-node and every source
-must resolve as an episode, else a non-zero exit with no partial write) and
+`consolidate --into` is atomic and fail-closed (the into-node must exist — any
+type — and every source must resolve as an episode, else a non-zero exit with
+no partial write) and
 idempotent (re-running writes no duplicate edges). It is distinct from
 `mark-consolidated`, which only flips status and writes no edges.
 

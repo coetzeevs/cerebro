@@ -21,6 +21,7 @@ func TestPluginSkills_MatchEmbeddedTemplates(t *testing.T) {
 		"recall":      skillRecallTemplate,
 		"consolidate": skillConsolidateTemplate,
 		"develop":     skillDevelopTemplate,
+		"dream":       skillDreamTemplate,
 	}
 	for name, want := range pairs {
 		got, err := os.ReadFile(pluginRoot + "/skills/" + name + "/SKILL.md")

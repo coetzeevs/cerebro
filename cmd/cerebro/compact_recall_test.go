@@ -24,7 +24,7 @@ func resetRecallCompactState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, def := range map[string]string{"compact": "false", "budget": "0", "prime": "false", "limit": "20", "threshold": "0.3", "global": "false"} {
+	for name, def := range map[string]string{"compact": "false", "budget": "9500", "prime": "false", "limit": "20", "threshold": "0.3", "global": "false"} {
 		if f := c.Flags().Lookup(name); f != nil {
 			_ = f.Value.Set(def)
 			f.Changed = false
@@ -225,5 +225,45 @@ func TestCompactBudget_KeySelection(t *testing.T) {
 	}
 	if got := compactBudget(s, true, 4000, true); got != 4000 {
 		t.Errorf("--budget: %d, want 4000", got)
+	}
+}
+
+// F8: `recall --prime "<q>" --compact` takes the query branch and is bounded
+// by recall_budget, not prime_budget. The voyage provider with no API key
+// fails Embed before any network call (internal/embed/voyage/voyage.go), so
+// Search degrades to the keyword lane deterministically on any host.
+func TestRecallCompact_PrimeWithQueryUsesRecallBudget(t *testing.T) {
+	proj := setupAddTest(t)
+	seedPrimeBrain(t, proj, 100, 300, map[string]string{
+		"prime_limit": "100", "prime_budget": "10000", "recall_budget": "2000",
+	})
+	t.Setenv("CEREBRO_VOYAGE_API_KEY", "")
+	b := brainAtDir(t, proj)
+	// Embedder config is raw schema_meta (read by brain.Open), not a config.* key.
+	_ = b.Store().SetMeta("embedding_provider", "voyage")
+	_ = b.Store().SetMeta("embedding_dimensions", "1024")
+	fts := b.Store().FTSAvailable()
+	_ = b.Close()
+	if !fts {
+		t.Skip("FTS5 not built in (no fts5 tag): no keyword fallback lane")
+	}
+
+	out, err := runRecallCLI(t, proj, "headline", "--prime", "--compact")
+	if err != nil {
+		t.Fatalf("recall --prime \"headline\" --compact: %v", err)
+	}
+	if len(out) > 2000 {
+		t.Fatalf("output %d bytes exceeds recall_budget 2000", len(out))
+	}
+	if !strings.Contains(out, " results (compact).\n") || len(deliveredID8s(out)) == 0 {
+		t.Fatalf("expected a non-empty query-mode compact index:\n%s", out)
+	}
+	// Control: the same brain without a query uses prime_budget (10000).
+	pout, err := runRecallCLI(t, proj, "--prime", "--compact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pout) <= 2000 {
+		t.Errorf("--prime without a query should use prime_budget 10000; got %d bytes", len(pout))
 	}
 }

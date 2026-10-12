@@ -366,3 +366,51 @@ func TestHookPrime_RecoversPanic(t *testing.T) {
 		t.Error("a recovered panic must not record the session_start sentinel")
 	}
 }
+
+// The M1 clamp must not change the selection: at 10x the active-node count
+// every pool and per-stratum cap already covers all nodes, so the clamped
+// selection equals a larger limit's on both paths. (Fresh nodes all fall in
+// the 48h recent stratum, which backfills capped strata, so this fixture does
+// not distinguish a smaller factor; the 10x bound is derived from the strata
+// tables in fetchMMRCandidates and selectPrimeStratified.)
+func TestClampPrimeLimit_SelectionInvariant(t *testing.T) {
+	proj := setupAddTest(t)
+	b := brainAtDir(t, proj)
+	defer func() { _ = b.Close() }()
+	for i := 0; i < 30; i++ {
+		if _, err := b.Add(fmt.Sprintf("reflection %02d", i), store.TypeReflection, brain.WithImportance(0.9-float64(i)/100)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 5; i++ {
+		if _, err := b.Add(fmt.Sprintf("concept %02d", i), store.TypeConcept, brain.WithImportance(0.5-float64(i)/100)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const n = 35
+	if got := clampPrimeLimit(b, 1_000_000_000_000); got != primeLimitActiveFactor*n {
+		t.Fatalf("clampPrimeLimit(1e12) = %d, want %d", got, primeLimitActiveFactor*n)
+	}
+	if got := clampPrimeLimit(b, 20); got != 20 {
+		t.Errorf("a sane limit must pass through unchanged; got %d", got)
+	}
+	ids := func(nodes []store.Node) string {
+		var s []string
+		for i := range nodes {
+			s = append(s, nodes[i].ID)
+		}
+		return strings.Join(s, ",")
+	}
+	clamped := clampPrimeLimit(b, 1_000_000)
+	if a, z := ids(selectPrimeStratified(b, clamped)), ids(selectPrimeStratified(b, 1_000)); a != z {
+		t.Error("stratified selection at the clamped limit differs from a larger limit")
+	}
+	mA, _ := selectPrimeMMR(b, clamped, store.PrimeScore)
+	mZ, _ := selectPrimeMMR(b, 1_000, store.PrimeScore)
+	if ids(mA) != ids(mZ) {
+		t.Error("MMR selection at the clamped limit differs from a larger limit")
+	}
+	if len(selectPrimeStratified(b, clamped)) != n {
+		t.Errorf("clamped stratified selection should cover all %d nodes", n)
+	}
+}

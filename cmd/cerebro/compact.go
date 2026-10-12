@@ -376,3 +376,27 @@ func compactBudget(s *store.Store, flagSet bool, flagValue int, primeNoQuery boo
 	}
 	return resolveBudget(s, "recall_budget")
 }
+
+// primeLimitActiveFactor bounds a useful prime_limit at 10x the active-node
+// count N. Every pool and per-stratum cap in the prime selection is sized
+// from limit. In fetchMMRCandidates the smallest pool is the reflection
+// stratum, round(0.10*limit)*3, so MMR sees every eligible node once
+// limit >= 3.34*N. In selectPrimeStratified the reflection and recent strata
+// are each capped at round(0.10*limit) selections, so they need limit >= 10*N.
+// At limit >= 10*N both paths therefore select exactly what any larger limit
+// would. The clamp never changes the selection; it only stops a huge stored
+// value (config set accepts any positive int, and import carries any value)
+// from sizing slices (security M1: makeslice panic at prime_limit=1e12).
+const primeLimitActiveFactor = 10
+
+// clampPrimeLimit caps limit at primeLimitActiveFactor x the active-node
+// count (minimum 1). If the count is unavailable, it caps at the registry
+// default rather than trusting the stored value.
+func clampPrimeLimit(b *brain.Brain, limit int) int {
+	stats, err := b.Stats()
+	if err != nil {
+		return min(limit, 20)
+	}
+	ceiling := max(1, primeLimitActiveFactor*stats.ActiveNodes)
+	return min(limit, ceiling)
+}

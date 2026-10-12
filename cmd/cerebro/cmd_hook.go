@@ -96,7 +96,19 @@ var hookPrimeEventFlag string
 // seams above), so tests can force a selection failure.
 var hookPrimeSelect = selectPrime
 
-var hookPrimeWork = func(event string) (bool, error) {
+// Any panic is recovered into (false, nil): the session stays unprimed and
+// retries on the next hook, and the process exits 0. An escaping Go panic
+// exits 2, which Claude Code treats as "block the prompt" on UserPromptSubmit
+// (https://code.claude.com/docs/en/hooks, exit code 2) — far worse than a
+// missed prime. Output is a single Print of a complete string, so a panic
+// before it leaves stdout empty.
+var hookPrimeWork = func(event string) (primed bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "cerebro: prime skipped after internal error: %v\n", r)
+			primed, err = false, nil
+		}
+	}()
 	proj := resolveProjectDir()
 	var nodes []store.Node
 	budget := defaultCompactBudget
@@ -111,6 +123,7 @@ var hookPrimeWork = func(event string) (bool, error) {
 			if limit < 1 {
 				limit = 20 // stored value bypassed validation (e.g. import)
 			}
+			limit = clampPrimeLimit(b, limit)
 			budget = resolveBudget(b.Store(), "prime_budget")
 			nodes = hookPrimeSelect(b, limit)
 		}

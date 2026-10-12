@@ -11,7 +11,14 @@ package main
 // printed so callers stamp last_surfaced / access telemetry only for those.
 
 import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -179,8 +186,103 @@ func renderCompactIndex(banner func(k, n int) string, header string, recs []comp
 	return banner(len(delivered), n) + header + body.String() + footer + trailerLine, delivered
 }
 
-func gcNotice(projectDir string) string { return "" }
+// validateBudget accepts an integer in [minCompactBudget, maxCompactBudget]:
+// the floor keeps room for the frame plus at least one record, the ceiling is
+// Claude Code's 10,000-character hook cap.
+func validateBudget(v string) error {
+	n, err := strconv.Atoi(v)
+	if err != nil {
+		return fmt.Errorf("must be an integer between %d and %d, got %q", minCompactBudget, maxCompactBudget, v)
+	}
+	if n < minCompactBudget || n > maxCompactBudget {
+		return fmt.Errorf("must be between %d and %d, got %d", minCompactBudget, maxCompactBudget, n)
+	}
+	return nil
+}
 
-func resolveBudget(s *store.Store, key string) int { return 0 }
+// resolveBudget reads a budget key and re-validates it. Config travels with
+// export/import without passing the config-set validator, so an out-of-range
+// stored value is ignored in favour of the default at read time.
+func resolveBudget(s *store.Store, key string) int {
+	val, _ := s.GetMeta(configMetaPrefix + key)
+	if validateBudget(val) != nil {
+		return defaultCompactBudget
+	}
+	n, _ := strconv.Atoi(val)
+	return n
+}
 
-func validateBudget(v string) error { return nil }
+// gcTailWindow bounds how much of .cerebro-gc.log is read (operator gate S2):
+// the log lives in the project directory, so it can be planted at any size.
+const gcTailWindow = 64 << 10
+
+const gcUnreadableNotice = "Cerebro GC log has an unreadable last entry: review .cerebro-gc.log."
+
+// gcNotice summarises the last .cerebro-gc.log record using only
+// cerebro-generated tokens: count, a re-formatted timestamp and up to five
+// 8-hex id prefixes. It never echoes stored content (the eviction record
+// carries full memory text), and any id that is not 8 lowercase hex makes the
+// whole entry "unreadable". Returns "" when the log is missing or empty.
+func gcNotice(projectDir string) string {
+	f, err := os.Open(filepath.Join(projectDir, ".cerebro-gc.log")) //nolint:gosec // project-local log path
+	if err != nil {
+		return ""
+	}
+	defer f.Close() //nolint:errcheck // read-only
+	info, err := f.Stat()
+	if err != nil || info.Size() == 0 {
+		return ""
+	}
+	start := max(info.Size()-gcTailWindow, 0)
+	buf := make([]byte, info.Size()-start)
+	if _, err := f.ReadAt(buf, start); err != nil && err != io.EOF {
+		return gcUnreadableNotice
+	}
+	tail := strings.TrimRight(string(buf), "\n")
+	if strings.TrimSpace(tail) == "" {
+		return ""
+	}
+	nl := strings.LastIndexByte(tail, '\n')
+	if nl < 0 && start > 0 {
+		return gcUnreadableNotice // the last line is longer than the window
+	}
+	last := tail[nl+1:]
+
+	var entry struct {
+		Timestamp string `json:"timestamp"`
+		DryRun    bool   `json:"dry_run"`
+		Evicted   []struct {
+			ID string `json:"id"`
+		} `json:"evicted"`
+	}
+	if json.Unmarshal([]byte(last), &entry) != nil || len(entry.Evicted) == 0 {
+		return gcUnreadableNotice
+	}
+	ts, err := time.Parse(time.RFC3339, entry.Timestamp)
+	if err != nil {
+		return gcUnreadableNotice
+	}
+	ids := make([]string, 0, 5)
+	for i, e := range entry.Evicted {
+		if !validCompactRecordID(e.ID) {
+			return gcUnreadableNotice
+		}
+		if i < 5 {
+			ids = append(ids, e.ID[:8])
+		}
+	}
+	list := strings.Join(ids, ", ")
+	if more := len(entry.Evicted) - len(ids); more > 0 {
+		list += fmt.Sprintf(", +%d more", more)
+	}
+	verb := "archived"
+	if entry.DryRun {
+		verb = "dry run would archive"
+	}
+	notice := fmt.Sprintf("Cerebro GC %s %d memories at %s (ids: %s). Review .cerebro-gc.log and re-add any still needed.",
+		verb, len(entry.Evicted), ts.UTC().Format(time.RFC3339), list)
+	if len(notice) > gcNoticeMax {
+		return gcUnreadableNotice
+	}
+	return notice
+}

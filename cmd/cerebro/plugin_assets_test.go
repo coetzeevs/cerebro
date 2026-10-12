@@ -95,8 +95,11 @@ func TestPluginHooks_ShapeAndNoStopHook(t *testing.T) {
 	if n := strings.Count(string(data), "cerebro stats -p"); n < 8 {
 		t.Errorf("expected self-gating on all plugin hook commands, found %d gates", n)
 	}
-	// agentic-kpko lockstep: SessionStart primes emit via the reliable
-	// additionalContext channel; no raw stdout recall remains in the plugin.
+	// agentic-kpko lockstep: SessionStart primes emit via the
+	// hookSpecificOutput.additionalContext JSON field (plain SessionStart stdout
+	// is not a supported injection surface); no raw stdout recall remains in
+	// the plugin. The field is capped at 10,000 characters, so the prime is a
+	// budgeted compact index (agentic-thnd).
 	if !strings.Contains(string(data), "--event sessionstart") {
 		t.Error("plugin SessionStart hooks must use `hook prime --event sessionstart`")
 	}

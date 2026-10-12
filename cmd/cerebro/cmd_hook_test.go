@@ -136,10 +136,11 @@ func TestHookState_LazyGCOfStaleFiles(t *testing.T) {
 // ---- agentic-kpko: SessionStart additionalContext emission (TDD) ----
 //
 // Plain stdout is NOT a reliable context-injection surface for SessionStart
-// (code.claude.com/docs/en/hooks — only hookSpecificOutput.additionalContext
-// reliably reaches the model; DE-327/HA-039). And the v3.3.0 guard recorded
-// session_start even when the stdout injection was dropped, turning the
-// UserPromptSubmit fallback from delivery-guarantee into dedup-only. The fix:
+// (code.claude.com/docs/en/hooks — hookSpecificOutput.additionalContext is the
+// model-context field, capped at 10,000 characters per field; DE-327/HA-039).
+// And the v3.3.0 guard recorded session_start even when the stdout injection
+// was dropped, turning the UserPromptSubmit fallback from delivery-guarantee
+// into dedup-only. The fix:
 // --event sessionstart emits the additionalContext JSON shape, and the guard
 // records state only when memories were actually delivered (primed=true).
 

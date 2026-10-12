@@ -1,7 +1,7 @@
 package main
 
 // compact_docs_test.go — agentic-thnd AC7 (drill-down documented, the false
-// "reliable additionalContext channel" claim removed from every copy,
+// "reliable ... channel" additionalContext claim removed from every copy,
 // including repo CLAUDE.md per operator gate F2) and AC8 (the /recall skill
 // teaches the compact scan plus the get drill-down).
 
@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 )
+
+// falseChannelClaim is split so a repo-wide grep for the claim returns nothing.
+const falseChannelClaim = "reliable " + "additionalContext channel"
 
 const sessionStartLine = "- Session start: a compact index of selected memories (one line each, kept under Claude Code's 10,000-character hook cap) is injected via hook; run `cerebro get <id>` for any memory's full content"
 
@@ -47,11 +50,11 @@ func TestClaudeMDCopies_SessionStartLineAndNoFalseClaim(t *testing.T) {
 		if !strings.Contains(body, sessionStartLine) {
 			t.Errorf("%s missing the corrected session-start line", name)
 		}
-		if strings.Contains(body, "reliable additionalContext channel") {
-			t.Errorf("%s still claims a reliable additionalContext channel", name)
+		if strings.Contains(body, falseChannelClaim) {
+			t.Errorf("%s still claims a reliable channel: %q", name, falseChannelClaim)
 		}
 	}
-	if strings.Contains(string(hookSrc), "reliable additionalContext channel") ||
+	if strings.Contains(string(hookSrc), falseChannelClaim) ||
 		strings.Contains(string(hookSrc), "additionalContext is the reliable") {
 		t.Error("cmd_hook.go still claims additionalContext is reliable")
 	}

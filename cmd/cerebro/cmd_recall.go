@@ -216,7 +216,27 @@ func outputScoredListWithProvenance(b *brain.Brain, nodes []store.ScoredNode, wi
 //
 // After selection, all chosen nodes have their last_surfaced timestamp updated via
 // TouchSurfaced so the surprise signal remains accurate across sessions.
+// primeStratified = selectPrimeStratified + TouchSurfaced(all); the compact
+// prime (agentic-thnd) stamps only what it delivered.
 func primeStratified(b *brain.Brain, limit int) []store.Node {
+	result := selectPrimeStratified(b, limit)
+
+	// Update last_surfaced for all selected nodes so the surprise signal remains
+	// accurate: nodes included in this briefing are "known" by the agent.
+	if len(result) > 0 {
+		ids := make([]string, len(result))
+		for i := range result {
+			ids[i] = result[i].ID
+		}
+		_ = b.Store().TouchSurfaced(ids) // best-effort; failure does not affect results
+	}
+
+	return result
+}
+
+// selectPrimeStratified is the stratified selection of primeStratified without
+// any stamping.
+func selectPrimeStratified(b *brain.Brain, limit int) []store.Node {
 	type stratum struct {
 		nodeType            store.NodeType // empty = any type
 		fraction            float64
@@ -288,16 +308,6 @@ func primeStratified(b *brain.Brain, limit int) []store.Node {
 	// Cap at limit
 	if len(result) > limit {
 		result = result[:limit]
-	}
-
-	// Update last_surfaced for all selected nodes so the surprise signal remains
-	// accurate: nodes included in this briefing are "known" by the agent.
-	if len(result) > 0 {
-		ids := make([]string, len(result))
-		for i := range result {
-			ids[i] = result[i].ID
-		}
-		_ = b.Store().TouchSurfaced(ids) // best-effort; failure does not affect results
 	}
 
 	return result

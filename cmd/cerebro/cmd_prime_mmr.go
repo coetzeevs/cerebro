@@ -20,10 +20,28 @@ import (
 //  5. Fall back to pure score order if embeddings are unavailable.
 //  6. Call TouchSurfaced for all selected nodes.
 //
+// primeMMR = selectPrimeMMR + TouchSurfaced(all). The compact prime
+// (agentic-thnd) calls selectPrimeMMR directly and stamps only the ids it
+// actually delivered.
+//
 // The scoreFn parameter allows callers to inject different scoring strategies:
 // use store.PrimeScore for the full surprise-aware score, or a simpler function
 // for testing or fallback.
 func primeMMR(b *brain.Brain, limit int, scoreFn func(*store.Node) float64) ([]store.Node, error) {
+	result, err := selectPrimeMMR(b, limit, scoreFn)
+	if err != nil || result == nil {
+		return result, err
+	}
+	resultIDs := make([]string, len(result))
+	for i := range result {
+		resultIDs[i] = result[i].ID
+	}
+	_ = b.Store().TouchSurfaced(resultIDs) // best-effort
+	return result, nil
+}
+
+// selectPrimeMMR is the MMR selection of primeMMR without any stamping.
+func selectPrimeMMR(b *brain.Brain, limit int, scoreFn func(*store.Node) float64) ([]store.Node, error) {
 	const lambda = 0.6 // 60% individual score, 40% diversity
 
 	// Fetch candidate pools.
@@ -105,14 +123,11 @@ func primeMMR(b *brain.Brain, limit int, scoreFn func(*store.Node) float64) ([]s
 		remaining = append(remaining[:bestIdx], remaining[bestIdx+1:]...)
 	}
 
-	// Extract nodes and update last_surfaced.
+	// Extract nodes. Stamping is the caller's job (primeMMR stamps all).
 	result := make([]store.Node, len(selected))
-	resultIDs := make([]string, len(selected))
 	for i := range selected {
 		result[i] = selected[i].node
-		resultIDs[i] = selected[i].node.ID
 	}
-	_ = b.Store().TouchSurfaced(resultIDs) // best-effort
 
 	return result, nil
 }

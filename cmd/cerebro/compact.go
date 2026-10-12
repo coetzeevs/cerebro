@@ -288,4 +288,35 @@ func gcNotice(projectDir string) string {
 	return notice
 }
 
-func selectPrime(b *brain.Brain, limit int) []store.Node { return nil }
+// selectPrime mirrors the recall --prime selection (MMR, falling back to
+// stratified) WITHOUT stamping last_surfaced: the caller stamps only the ids
+// its budgeted render actually delivered (ADR-018).
+func selectPrime(b *brain.Brain, limit int) []store.Node {
+	nodes, err := selectPrimeMMR(b, limit, store.PrimeScore)
+	if err != nil || nodes == nil {
+		nodes = selectPrimeStratified(b, limit)
+	}
+	return nodes
+}
+
+// compactPrimeBanner is the prime index banner line.
+func compactPrimeBanner(k, n int) string {
+	return fmt.Sprintf("Cerebro online. %d of %d memories indexed (compact).\n", k, n)
+}
+
+// compactProjectSource names the project brain in the frame header.
+const compactProjectSource = "this project's Cerebro brain"
+
+// primeRecords converts selected nodes into compact records (importance metric).
+func primeRecords(nodes []store.Node) []compactRecord {
+	recs := make([]compactRecord, len(nodes))
+	for i := range nodes {
+		recs[i] = compactRecord{
+			ID:      nodes[i].ID,
+			Type:    nodes[i].Type,
+			Metric:  fmt.Sprintf("%.2f", nodes[i].Importance),
+			Content: nodes[i].Content,
+		}
+	}
+	return recs
+}

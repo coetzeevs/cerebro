@@ -19,6 +19,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/coetzeevs/cerebro/internal/store"
 )
 
 // stubHookRunners replaces the work runners with counters and restores them
@@ -141,11 +143,19 @@ func TestHookState_LazyGCOfStaleFiles(t *testing.T) {
 // --event sessionstart emits the additionalContext JSON shape, and the guard
 // records state only when memories were actually delivered (primed=true).
 
+// agentic-thnd rewrite (ADR-018): the prime is now a budgeted compact index
+// rendered from selected nodes; renderPrimeOutput returns the delivered ids.
+func renderTestNodes() []store.Node {
+	return []store.Node{
+		{ID: "abcd1234-0000-4000-8000-000000000001", Type: store.TypeConcept, Importance: 0.80, Content: "A memory.\nwith a body"},
+		{ID: "ef567890-0000-4000-8000-000000000002", Type: store.TypeEpisode, Importance: 0.50, Content: "Another."},
+	}
+}
+
 func TestRenderPrime_SessionStartEmitsAdditionalContextJSON(t *testing.T) {
-	md := "## abcd1234 [concept/active] (importance: 0.80)\nA memory.\n\n## ef567890 [episode/active] (importance: 0.50)\nAnother.\n"
-	out, primed := renderPrimeOutput("sessionstart", md, t.TempDir())
-	if !primed {
-		t.Fatal("non-empty prime must report primed=true")
+	out, delivered := renderPrimeOutput("sessionstart", renderTestNodes(), defaultCompactBudget, t.TempDir())
+	if len(delivered) != 2 {
+		t.Fatalf("non-empty prime must deliver both memories, got %v", delivered)
 	}
 	var payload struct {
 		SystemMessage      string `json:"systemMessage"`
@@ -160,12 +170,22 @@ func TestRenderPrime_SessionStartEmitsAdditionalContextJSON(t *testing.T) {
 	if payload.HookSpecificOutput.HookEventName != "SessionStart" {
 		t.Errorf("hookEventName: got %q", payload.HookSpecificOutput.HookEventName)
 	}
-	if payload.SystemMessage != "Cerebro online. 2 memories loaded." {
+	if payload.SystemMessage != "Cerebro online. 2 of 2 memories indexed (compact)." {
 		t.Errorf("systemMessage: got %q", payload.SystemMessage)
 	}
-	if !strings.Contains(payload.HookSpecificOutput.AdditionalContext, "A memory.") ||
-		!strings.Contains(payload.HookSpecificOutput.AdditionalContext, "Cerebro online. 2 memories loaded.") {
-		t.Errorf("additionalContext missing banner or memories: %q", payload.HookSpecificOutput.AdditionalContext)
+	ac := payload.HookSpecificOutput.AdditionalContext
+	for _, want := range []string{
+		"Cerebro online. 2 of 2 memories indexed (compact).\n<cerebro-memories>\n",
+		"- abcd1234 concept 0.80 A memory.\n",
+		"- ef567890 episode 0.50 Another.\n",
+		"</cerebro-memories>\n",
+	} {
+		if !strings.Contains(ac, want) {
+			t.Errorf("additionalContext missing %q:\n%s", want, ac)
+		}
+	}
+	if strings.Contains(ac, "with a body") {
+		t.Error("compact index must carry headlines only, not bodies")
 	}
 }
 
@@ -173,7 +193,8 @@ func TestRenderPrime_SessionStartEmptyWithBrainStaysSilent(t *testing.T) {
 	// A brain that exists but returned no memories: no output, not primed —
 	// the UserPromptSubmit fallback may retry later.
 	proj := setupAddTest(t) // creates a real (empty) brain for proj
-	out, primed := renderPrimeOutput("sessionstart", "", proj)
+	out, delivered := renderPrimeOutput("sessionstart", nil, defaultCompactBudget, proj)
+	primed := len(delivered) > 0
 	if out != "" || primed {
 		t.Errorf("empty prime with existing brain must be silent/unprimed: out=%q primed=%v", out, primed)
 	}
@@ -181,8 +202,8 @@ func TestRenderPrime_SessionStartEmptyWithBrainStaysSilent(t *testing.T) {
 
 func TestRenderPrime_SessionStartNoBrainEmitsNotice(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
-	out, primed := renderPrimeOutput("sessionstart", "", t.TempDir())
-	if primed {
+	out, delivered := renderPrimeOutput("sessionstart", nil, defaultCompactBudget, t.TempDir())
+	if primed := len(delivered) > 0; primed {
 		t.Error("no-brain must not report primed")
 	}
 	var payload map[string]any
@@ -195,16 +216,15 @@ func TestRenderPrime_SessionStartNoBrainEmitsNotice(t *testing.T) {
 }
 
 func TestRenderPrime_DefaultEventKeepsPlainStdout(t *testing.T) {
-	md := "## abcd1234 [concept/active] (importance: 0.80)\nA memory.\n"
-	out, primed := renderPrimeOutput("userpromptsubmit", md, t.TempDir())
-	if !primed {
-		t.Fatal("non-empty prime must report primed=true")
+	out, delivered := renderPrimeOutput("userpromptsubmit", renderTestNodes()[:1], defaultCompactBudget, t.TempDir())
+	if len(delivered) != 1 {
+		t.Fatalf("non-empty prime must deliver, got %v", delivered)
 	}
 	if strings.HasPrefix(strings.TrimSpace(out), "{") {
 		t.Errorf("userpromptsubmit output must stay plain (stdout is a supported channel there): %q", out)
 	}
-	if !strings.Contains(out, "Cerebro online. 1 memories loaded.") || !strings.Contains(out, "A memory.") {
-		t.Errorf("plain output missing banner or memories: %q", out)
+	if !strings.HasPrefix(out, "Cerebro online. 1 of 1 memories indexed (compact).\n") || !strings.Contains(out, "- abcd1234 concept 0.80 A memory.\n") {
+		t.Errorf("plain output missing banner or index line: %q", out)
 	}
 }
 

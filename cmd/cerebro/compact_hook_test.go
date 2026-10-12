@@ -280,3 +280,89 @@ func TestHookPrime_GCNoticeAfterFooter(t *testing.T) {
 		t.Errorf("GC notice must follow the footer; tail=%q", tail)
 	}
 }
+
+// ---- Phase 3 rework (security M1) ----
+
+// callPrimeNoPanic runs hookPrimeWork and turns an escaping panic into a test
+// failure instead of crashing the test binary.
+func callPrimeNoPanic(t *testing.T, event string) (out string, primed bool, err error) {
+	t.Helper()
+	out = captureStdout(t, func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("hookPrimeWork panicked (a Go panic exits 2, which blocks a UserPromptSubmit prompt): %v", r)
+			}
+		}()
+		primed, err = hookPrimeWork(event)
+	})
+	return out, primed, err
+}
+
+// M1: a huge stored prime_limit (config set accepts it; import carries it)
+// must not panic the in-process hook, and must not cut the selection short.
+func TestHookPrime_HugePrimeLimitDoesNotPanic(t *testing.T) {
+	for _, event := range []string{"userpromptsubmit", "sessionstart"} {
+		t.Run(event, func(t *testing.T) {
+			proj := setupAddTest(t)
+			seedPrimeBrain(t, proj, 50, 50, map[string]string{"prime_limit": "1000000000000"})
+			out, primed, err := callPrimeNoPanic(t, event)
+			if err != nil || !primed {
+				t.Fatalf("primed=%v err=%v, want a delivered prime", primed, err)
+			}
+			text := out
+			if event == "sessionstart" {
+				var p primePayload
+				if jerr := json.Unmarshal([]byte(out), &p); jerr != nil {
+					t.Fatalf("not JSON: %v", jerr)
+				}
+				text = p.HookSpecificOutput.AdditionalContext
+			}
+			if len(text) > defaultCompactBudget {
+				t.Errorf("output %d bytes exceeds the default budget", len(text))
+			}
+			if k := len(deliveredID8s(text)); k != 50 {
+				t.Errorf("delivered %d of 50; the clamp must not cut the selection below the active-node count", k)
+			}
+		})
+	}
+}
+
+// M1 / Design R5: any panic in selection or rendering degrades to an
+// unprimed session (exit 0, retried on the next hook) with no stdout.
+func TestHookPrime_RecoversPanic(t *testing.T) {
+	proj := setupAddTest(t)
+	seedPrimeBrain(t, proj, 3, 50, nil)
+	old := hookPrimeSelect
+	hookPrimeSelect = func(*brain.Brain, int) []store.Node { panic("forced selection failure") }
+	t.Cleanup(func() { hookPrimeSelect = old })
+
+	out, primed, err := callPrimeNoPanic(t, "userpromptsubmit")
+	if err != nil || primed {
+		t.Errorf("recovered panic must return (false, nil); got primed=%v err=%v", primed, err)
+	}
+	if out != "" {
+		t.Errorf("recovered panic must leave stdout empty; got %q", out)
+	}
+
+	// Through the guard: runHookEvent returns nil (exit 0) and records no sentinel.
+	t.Setenv("CLAUDE_SESSION_ID", "")
+	oldStdin, oldEvent := hookStdin, hookPrimeEventFlag
+	hookStdin = strings.NewReader(`{"session_id":"sess-thnd-m1"}`)
+	hookPrimeEventFlag = "userpromptsubmit"
+	t.Cleanup(func() { hookStdin, hookPrimeEventFlag = oldStdin, oldEvent })
+	var herr error
+	_ = captureStdout(t, func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("runHookEvent panicked: %v", r)
+			}
+		}()
+		herr = runHookEvent("prime")
+	})
+	if herr != nil {
+		t.Errorf("runHookEvent: %v, want nil", herr)
+	}
+	if st, _ := loadHookState("sess-thnd-m1"); st.EventsFired["session_start"] != "" {
+		t.Error("a recovered panic must not record the session_start sentinel")
+	}
+}

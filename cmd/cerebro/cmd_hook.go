@@ -92,6 +92,10 @@ var hookPrimeEventFlag string
 // exactly the ids that were printed. The previous re-exec of
 // `recall --prime` stamped every selected memory in the child before any
 // budget could apply, so stamps recorded deliveries that never happened.
+// hookPrimeSelect is the prime selection seam (same pattern as the work-runner
+// seams above), so tests can force a selection failure.
+var hookPrimeSelect = selectPrime
+
 var hookPrimeWork = func(event string) (bool, error) {
 	proj := resolveProjectDir()
 	var nodes []store.Node
@@ -108,7 +112,7 @@ var hookPrimeWork = func(event string) (bool, error) {
 				limit = 20 // stored value bypassed validation (e.g. import)
 			}
 			budget = resolveBudget(b.Store(), "prime_budget")
-			nodes = selectPrime(b, limit)
+			nodes = hookPrimeSelect(b, limit)
 		}
 	}
 	rendered, delivered := renderPrimeOutput(event, nodes, budget, proj)

@@ -389,6 +389,9 @@ func compactBudget(s *store.Store, flagSet bool, flagValue int, primeNoQuery boo
 // from sizing slices (security M1: makeslice panic at prime_limit=1e12).
 const primeLimitActiveFactor = 10
 
+// hookPrimeLimitMax: stub for the red step.
+const hookPrimeLimitMax = 1 << 62
+
 // clampPrimeLimit caps limit at primeLimitActiveFactor x the active-node
 // count (minimum 1). If the count is unavailable, it caps at the registry
 // default rather than trusting the stored value.

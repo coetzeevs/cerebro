@@ -377,7 +377,7 @@ func TestClampPrimeLimit_SelectionInvariant(t *testing.T) {
 	proj := setupAddTest(t)
 	b := brainAtDir(t, proj)
 	defer func() { _ = b.Close() }()
-	for i := 0; i < 30; i++ {
+	for i := 0; i < 15; i++ {
 		if _, err := b.Add(fmt.Sprintf("reflection %02d", i), store.TypeReflection, brain.WithImportance(0.9-float64(i)/100)); err != nil {
 			t.Fatal(err)
 		}
@@ -387,9 +387,9 @@ func TestClampPrimeLimit_SelectionInvariant(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	const n = 35
-	if got := clampPrimeLimit(b, 1_000_000_000_000); got != primeLimitActiveFactor*n {
-		t.Fatalf("clampPrimeLimit(1e12) = %d, want %d", got, primeLimitActiveFactor*n)
+	const n = 20 // 10*N == hookPrimeLimitMax: invariance must hold at the hook ceiling
+	if got := clampPrimeLimit(b, 1_000_000_000_000); got != min(primeLimitActiveFactor*n, hookPrimeLimitMax) {
+		t.Fatalf("clampPrimeLimit(1e12) = %d, want %d", got, min(primeLimitActiveFactor*n, hookPrimeLimitMax))
 	}
 	if got := clampPrimeLimit(b, 20); got != 20 {
 		t.Errorf("a sane limit must pass through unchanged; got %d", got)
@@ -412,5 +412,41 @@ func TestClampPrimeLimit_SelectionInvariant(t *testing.T) {
 	}
 	if len(selectPrimeStratified(b, clamped)) != n {
 		t.Errorf("clamped stratified selection should cover all %d nodes", n)
+	}
+}
+
+// M2: the 10x-N clamp bounds allocation but not MMR run time (roughly
+// limit^3 with embeddings), so the hook path also caps prime_limit at
+// hookPrimeLimitMax. The limit actually handed to selection is observed via
+// the hookPrimeSelect seam.
+func TestHookPrime_LimitResolvesWithinHookCeiling(t *testing.T) {
+	cases := []struct {
+		stored string
+		want   int
+	}{
+		{"1000000000000", hookPrimeLimitMax},
+		{"1000", hookPrimeLimitMax},
+		{"100", 100}, // operator ruling cc8abcb3 (estate) unaffected
+		{"20", 20},   // registry default unaffected
+	}
+	for _, tc := range cases {
+		t.Run(tc.stored, func(t *testing.T) {
+			proj := setupAddTest(t)
+			seedPrimeBrain(t, proj, 50, 50, map[string]string{"prime_limit": tc.stored}) // 50 nodes: 10x N (500) exceeds the ceiling
+			got := -1
+			old := hookPrimeSelect
+			hookPrimeSelect = func(b *brain.Brain, limit int) []store.Node { got = limit; return selectPrime(b, limit) }
+			t.Cleanup(func() { hookPrimeSelect = old })
+			_, primed, err := callPrimeNoPanic(t, "userpromptsubmit")
+			if err != nil || !primed {
+				t.Fatalf("primed=%v err=%v", primed, err)
+			}
+			if got != tc.want {
+				t.Errorf("stored prime_limit %s reached selection as %d, want %d", tc.stored, got, tc.want)
+			}
+			if got > 200 {
+				t.Errorf("hook-path limit %d exceeds 200", got)
+			}
+		})
 	}
 }

@@ -396,12 +396,16 @@ const primeLimitActiveFactor = 10
 // 1000; on a 1,200-node fixture with 1024-dim embeddings 7.02 s at 200 and
 // 44.96 s at 400. Claude Code's UserPromptSubmit command hooks default to a
 // 30 s timeout (https://code.claude.com/docs/en/hooks), and a timed-out prime
-// leaves the session unprimed, so every prompt waits. The default 9,500-byte
-// budget also caps delivery near 133 records, so a limit above 200 adds cost
-// and no records. The estate's prime_limit=100 (ruling cc8abcb3) and the
-// default 20 sit below the ceiling and are unaffected. Hook path only: config
-// set validation, the CLI --limit and the MMR algorithm are unchanged
-// (agentic-qytg).
+// leaves the session unprimed, so every prompt waits. These timings assume
+// embeddings of 1024 dimensions or fewer; cost scales with dimension (4096-dim
+// measured 29-32 s at 200), and bounding the work itself is agentic-qytg.
+// Delivered records are the budget divided by per-line bytes: about 133 on the
+// estate brain at the default 9,500-byte budget. Brains of short memories can
+// fit more (400 short memories delivered 315 at limit 1000 before this
+// ceiling), which the ceiling gives up to keep hook run time bounded. The
+// estate's prime_limit=100 (ruling cc8abcb3) and the default 20 sit below the
+// ceiling and are unaffected. Hook path only: config set validation, the CLI
+// --limit and the MMR algorithm are unchanged (agentic-qytg).
 const hookPrimeLimitMax = 200
 
 // clampPrimeLimit caps limit at min(primeLimitActiveFactor x the active-node

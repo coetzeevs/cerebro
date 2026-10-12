@@ -369,7 +369,9 @@ func TestHookPrime_RecoversPanic(t *testing.T) {
 
 // The M1 clamp must not change the selection: at 10x the active-node count
 // every pool and per-stratum cap already covers all nodes, so the clamped
-// selection equals a larger limit's on both paths. (Fresh nodes all fall in
+// selection equals a larger limit's on both paths. This invariance holds only
+// while 10*N <= hookPrimeLimitMax (200), i.e. N <= 20; above that the M2
+// ceiling binds first and the selection can be smaller. (Fresh nodes all fall in
 // the 48h recent stratum, which backfills capped strata, so this fixture does
 // not distinguish a smaller factor; the 10x bound is derived from the strata
 // tables in fetchMMRCandidates and selectPrimeStratified.)

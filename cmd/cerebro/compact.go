@@ -320,3 +320,13 @@ func primeRecords(nodes []store.Node) []compactRecord {
 	}
 	return recs
 }
+
+func renderCompactScored(results []store.ScoredNode, budget int, global bool) (out string, delivered []string) {
+	return "", nil
+}
+
+func compactQueryOutput(b *brain.Brain, results []store.ScoredNode, budget int, global bool) string {
+	return ""
+}
+
+func compactBudget(s *store.Store, flagSet bool, flagValue int, primeNoQuery bool) int { return 0 }

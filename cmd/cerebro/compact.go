@@ -389,17 +389,29 @@ func compactBudget(s *store.Store, flagSet bool, flagValue int, primeNoQuery boo
 // from sizing slices (security M1: makeslice panic at prime_limit=1e12).
 const primeLimitActiveFactor = 10
 
-// hookPrimeLimitMax: stub for the red step.
-const hookPrimeLimitMax = 1 << 62
+// hookPrimeLimitMax is a fixed hook-path ceiling on prime_limit (security
+// M2). The 10x-N clamp bounds allocation but not run time: greedy MMR costs
+// roughly limit^3 with embeddings. Hook timings measured 2026-10-12: on an
+// estate-brain copy (2,082 nodes) 0.67 s at 100, 4.80 s at 200 and 136 s at
+// 1000; on a 1,200-node fixture with 1024-dim embeddings 7.02 s at 200 and
+// 44.96 s at 400. Claude Code's UserPromptSubmit command hooks default to a
+// 30 s timeout (https://code.claude.com/docs/en/hooks), and a timed-out prime
+// leaves the session unprimed, so every prompt waits. The default 9,500-byte
+// budget also caps delivery near 133 records, so a limit above 200 adds cost
+// and no records. The estate's prime_limit=100 (ruling cc8abcb3) and the
+// default 20 sit below the ceiling and are unaffected. Hook path only: config
+// set validation, the CLI --limit and the MMR algorithm are unchanged
+// (agentic-qytg).
+const hookPrimeLimitMax = 200
 
-// clampPrimeLimit caps limit at primeLimitActiveFactor x the active-node
-// count (minimum 1). If the count is unavailable, it caps at the registry
-// default rather than trusting the stored value.
+// clampPrimeLimit caps limit at min(primeLimitActiveFactor x the active-node
+// count (minimum 1), hookPrimeLimitMax). If the count is unavailable, it caps
+// at the registry default rather than trusting the stored value.
 func clampPrimeLimit(b *brain.Brain, limit int) int {
 	stats, err := b.Stats()
 	if err != nil {
 		return min(limit, 20)
 	}
 	ceiling := max(1, primeLimitActiveFactor*stats.ActiveNodes)
-	return min(limit, ceiling)
+	return min(limit, ceiling, hookPrimeLimitMax)
 }

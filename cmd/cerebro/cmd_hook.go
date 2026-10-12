@@ -81,21 +81,23 @@ type hookSessionState struct {
 // hookPrimeEventFlag selects the emission channel for `hook prime`.
 var hookPrimeEventFlag string
 
-// Work runners are seams so the guard machinery is unit-testable without
-// invoking the real prime/gc/ingest paths. hookPrimeWork returns primed=true
-// only when memories were actually delivered — the guard records session
-// state ONLY then, so an undelivered prime retries on the next hook instead
-// of silently marking the session primed (the v3.3.0 regression, agentic-kpko).
+// hookPrimeSelect is the prime selection seam, so tests can observe the
+// resolved limit and force a selection failure.
+var hookPrimeSelect = selectPrime
+
+// Work runners (hookPrimeWork, hookSessionEndWork) are seams so the guard
+// machinery is unit-testable without invoking the real prime/gc/ingest paths.
+// hookPrimeWork returns primed=true only when memories were actually
+// delivered — the guard records session state ONLY then, so an undelivered
+// prime retries on the next hook instead of silently marking the session
+// primed (the v3.3.0 regression, agentic-kpko).
 //
 // The prime runs in-process (agentic-thnd, ADR-018): select WITHOUT stamping,
 // render the budgeted compact index, print it, then stamp last_surfaced for
 // exactly the ids that were printed. The previous re-exec of
 // `recall --prime` stamped every selected memory in the child before any
 // budget could apply, so stamps recorded deliveries that never happened.
-// hookPrimeSelect is the prime selection seam (same pattern as the work-runner
-// seams above), so tests can force a selection failure.
-var hookPrimeSelect = selectPrime
-
+//
 // Any panic is recovered into (false, nil): the session stays unprimed and
 // retries on the next hook, and the process exits 0. An escaping Go panic
 // exits 2, which Claude Code treats as "block the prompt" on UserPromptSubmit

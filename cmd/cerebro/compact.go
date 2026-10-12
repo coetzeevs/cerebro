@@ -178,3 +178,9 @@ func renderCompactIndex(banner func(k, n int) string, header string, recs []comp
 	}
 	return banner(len(delivered), n) + header + body.String() + footer + trailerLine, delivered
 }
+
+func gcNotice(projectDir string) string { return "" }
+
+func resolveBudget(s *store.Store, key string) int { return 0 }
+
+func validateBudget(v string) error { return nil }

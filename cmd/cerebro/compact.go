@@ -22,6 +22,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/coetzeevs/cerebro/brain"
 	"github.com/coetzeevs/cerebro/internal/store"
 )
 
@@ -286,3 +287,5 @@ func gcNotice(projectDir string) string {
 	}
 	return notice
 }
+
+func selectPrime(b *brain.Brain, limit int) []store.Node { return nil }

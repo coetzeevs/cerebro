@@ -321,12 +321,58 @@ func primeRecords(nodes []store.Node) []compactRecord {
 	return recs
 }
 
+// compactQueryBanner is the query-mode compact index banner line.
+func compactQueryBanner(k, n int) string {
+	return fmt.Sprintf("%d of %d results (compact).\n", k, n)
+}
+
+// compactGlobalSource names the record origin when --global merges the
+// project and global brains (operator gate F4: not "this project's").
+const compactGlobalSource = "the project and global Cerebro brains"
+
+// renderCompactScored renders query results as the compact index with a
+// score column. Empty or wholly undeliverable results keep the full-mode
+// "No relevant memories found." line.
 func renderCompactScored(results []store.ScoredNode, budget int, global bool) (out string, delivered []string) {
-	return "", nil
+	recs := make([]compactRecord, len(results))
+	for i := range results {
+		recs[i] = compactRecord{
+			ID:      results[i].ID,
+			Type:    results[i].Type,
+			Metric:  fmt.Sprintf("%.3f", results[i].Score),
+			Content: results[i].Content,
+		}
+	}
+	source := compactProjectSource
+	if global {
+		source = compactGlobalSource
+	}
+	out, delivered = renderCompactIndex(compactQueryBanner, compactFrameHeader("score", source), recs, budget, "")
+	if len(delivered) == 0 {
+		return "No relevant memories found.\n", nil
+	}
+	return out, delivered
 }
 
+// compactQueryOutput renders query results compactly and touches access
+// telemetry for the delivered ids only (best-effort, as full mode does for
+// all returned ids). Global-store ids are no-ops against the project brain.
 func compactQueryOutput(b *brain.Brain, results []store.ScoredNode, budget int, global bool) string {
-	return ""
+	out, delivered := renderCompactScored(results, budget, global)
+	_ = b.TouchAccessed(delivered)
+	return out
 }
 
-func compactBudget(s *store.Store, flagSet bool, flagValue int, primeNoQuery bool) int { return 0 }
+// compactBudget resolves the byte budget for recall --compact: an explicit
+// --budget wins; otherwise prime_budget for --prime without a query, and
+// recall_budget for every query (including --prime "<q>", which takes the
+// query branch).
+func compactBudget(s *store.Store, flagSet bool, flagValue int, primeNoQuery bool) int {
+	if flagSet {
+		return flagValue
+	}
+	if primeNoQuery {
+		return resolveBudget(s, "prime_budget")
+	}
+	return resolveBudget(s, "recall_budget")
+}

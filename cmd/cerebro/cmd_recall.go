@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,8 @@ var recallSubtypeFlag string
 var recallAsOfFlag string
 var recallWithProvenanceFlag int
 var recallProvenanceDepthFlag int
+var recallCompactFlag bool
+var recallBudgetFlag int
 
 func init() {
 	cmd := &cobra.Command{
@@ -29,7 +32,12 @@ func init() {
 importance, recency, and graph structure. Use --prime for session-start context.
 
 With --prime and no query, returns top memories by importance (no embeddings needed).
-With --prime and a query, performs vector search with a low threshold.`,
+With --prime and a query, performs vector search with a low threshold.
+
+With --compact, prints a framed one-line-per-memory index (id, type,
+importance or score, headline) under a byte budget: prime_budget for --prime
+without a query, recall_budget otherwise (default 9500, range 2000-10000;
+--budget overrides). Fetch full content with: cerebro get <id>.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: runRecall,
 	}
@@ -59,6 +67,10 @@ A computed provenance_status field (complete|none|legacy) always appears in JSON
 	cmd.Flags().Lookup("with-provenance").NoOptDefVal = "1"
 	cmd.Flags().IntVar(&recallProvenanceDepthFlag, "provenance-depth", 1,
 		`Explicit provenance-walk depth (alias for --with-provenance=N; wins if both are given). Clamped to 100.`)
+	cmd.Flags().BoolVar(&recallCompactFlag, "compact", false,
+		`Budgeted one-line-per-memory index (markdown only; agentic-thnd). Full content: cerebro get <id>.`)
+	cmd.Flags().IntVar(&recallBudgetFlag, "budget", defaultCompactBudget,
+		`Byte budget for --compact, 2000-10000 (overrides prime_budget / recall_budget). Requires --compact.`)
 	rootCmd.AddCommand(cmd)
 }
 
@@ -67,6 +79,26 @@ func runRecall(cmd *cobra.Command, args []string) error {
 
 	if query == "" && !recallPrimeFlag {
 		return cmd.Help()
+	}
+
+	// --compact / --budget validation (agentic-thnd AC5, operator gate F4) runs
+	// before the brain opens so a bad combination fails fast.
+	budgetSet := cmd.Flags().Changed("budget")
+	if budgetSet && !recallCompactFlag {
+		return fmt.Errorf("--budget requires --compact")
+	}
+	if recallCompactFlag {
+		if formatFlag == "json" {
+			return fmt.Errorf("--compact cannot be combined with --format json (the compact index is markdown only)")
+		}
+		if cmd.Flags().Changed("with-provenance") || cmd.Flags().Changed("provenance-depth") {
+			return fmt.Errorf("--compact cannot be combined with --with-provenance or --provenance-depth")
+		}
+	}
+	if budgetSet {
+		if err := validateBudget(strconv.Itoa(recallBudgetFlag)); err != nil {
+			return fmt.Errorf("--budget: %w", err)
+		}
 	}
 
 	b, err := openBrain()
@@ -84,6 +116,21 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	// Prime mode without query: MMR-based retrieval for diverse, surprise-aware
 	// session briefing. Falls back to stratified if MMR encounters an error.
 	if recallPrimeFlag && query == "" {
+		if recallCompactFlag {
+			// Select without stamping, render under the budget, then stamp only
+			// the delivered ids (ADR-018). No GC trailer: that is hook-only.
+			nodes := selectPrime(b, recallLimitFlag)
+			out, delivered := renderCompactIndex(compactPrimeBanner,
+				compactFrameHeader("importance", compactProjectSource), primeRecords(nodes),
+				compactBudget(b.Store(), budgetSet, recallBudgetFlag, true), "")
+			if len(delivered) == 0 {
+				fmt.Println("No memories found.")
+				return nil
+			}
+			fmt.Print(out)
+			_ = b.Store().TouchSurfaced(delivered) // best-effort
+			return nil
+		}
 		nodes, err := primeMMR(b, recallLimitFlag, store.PrimeScore)
 		if err != nil || nodes == nil {
 			// Fallback to stratified (no embeddings or other error)
@@ -125,6 +172,13 @@ func runRecall(cmd *cobra.Command, args []string) error {
 	}
 	if err != nil {
 		return err
+	}
+
+	// Compact query mode (incl. --prime "<q>"): render under recall_budget and
+	// touch access telemetry for the delivered ids only.
+	if recallCompactFlag {
+		fmt.Print(compactQueryOutput(b, results, compactBudget(b.Store(), budgetSet, recallBudgetFlag, false), recallGlobalFlag))
+		return nil
 	}
 
 	// N2 wire-lite: query-mode retrieval is usage — touch access telemetry for

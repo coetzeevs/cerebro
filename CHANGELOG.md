@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [3.6.0] - 2026-10-13
+
 ### Fixed [agentic-thnd]
 
 - **The session-start prime now fits Claude Code's 10,000-character hook cap.** Claude Code replaces any hook `additionalContext` or plain stdout over 10,000 characters with a file path plus a 2,000-character preview that Claude is not asked to read (https://code.claude.com/docs/en/hooks). The prime rendered full memory content with no budget (274,980 characters on a copy of the estate brain, 29,518 on the agentic brain), so the model only ever saw the preview. `cerebro hook prime` now renders in-process a framed one-line-per-memory index (`- <id> <type> <importance> <headline>`) under `prime_budget` (default 9500 bytes), for both `--event sessionstart` and the UserPromptSubmit fallback. Measured on copies with the branch binary: estate 8,951 bytes with 100 of 100 memories (full `recall --prime` 262,248 bytes), agentic 4,123 bytes with 20 of 20 (full 27,620). [agentic-thnd]

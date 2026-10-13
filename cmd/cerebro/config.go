@@ -97,6 +97,18 @@ var configRegistry = map[string]configParam{
 		Default:     "0.0",
 		Validate:    validateUnitFloat,
 	},
+	"prime_budget": {
+		Key:         "prime_budget",
+		Description: "Byte budget for the session-start prime (hook prime, recall --prime --compact), range 2000-10000; the default keeps it under Claude Code's 10,000-character hook cap (agentic-thnd)",
+		Default:     "9500",
+		Validate:    validateBudget,
+	},
+	"recall_budget": {
+		Key:         "recall_budget",
+		Description: "Byte budget for query-mode recall --compact, range 2000-10000 (agentic-thnd)",
+		Default:     "9500",
+		Validate:    validateBudget,
+	},
 }
 
 // configMetaPrefix is prepended to config keys when storing in schema_meta.
@@ -445,6 +457,8 @@ func configRegistryKeys() []string {
 		"bm25_enabled",
 		"expand_threshold",
 		"expand_spread_threshold",
+		"prime_budget",
+		"recall_budget",
 	}
 }
 

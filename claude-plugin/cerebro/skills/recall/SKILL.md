@@ -15,6 +15,18 @@ cerebro recall "$ARGUMENTS" --format md -p "$CLAUDE_PROJECT_DIR"
 
 Review the retrieved memories and integrate them into your understanding of the current context.
 
+For a quick scan of many memories, use the compact index: one line per memory (id, type, score, headline), kept within a fixed size budget:
+
+```bash
+cerebro recall "$ARGUMENTS" --compact -p "$CLAUDE_PROJECT_DIR"
+```
+
+The session-start prime is the same kind of index. When a line looks relevant, fetch that memory's full content by its id:
+
+```bash
+cerebro get <id> -p "$CLAUDE_PROJECT_DIR"
+```
+
 If key information seems missing, try alternative queries or check specific memory types:
 
 ```bash

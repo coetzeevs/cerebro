@@ -3,6 +3,8 @@
 ## Status
 Accepted (Phases 1-3 implemented; Phase 4 deferred)
 
+**Amended by:** ADR-018 (agentic-thnd): `last_surfaced` is stamped only for memories delivered in the emitted briefing (id and headline), not for every selected node.
+
 ## Supersedes
 Phase 4 of this ADR, when accepted and implemented, supersedes the "Read Path: Composite Scoring" section of ADR-003 with respect to the importance and recency signal computations. The weight distribution (0.35/0.25/0.25/0.15) and the relevance/structural signals are unchanged. ADR-003's importance formula `importance * (1 + ln(1 + access_count))` and recency formula `exp(-decay * hours)` are replaced by the ACT-R-based activation model described in Phase 4. Phases 1-3 do not conflict with ADR-003.
 

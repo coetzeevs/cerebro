@@ -35,9 +35,9 @@ Always pass `-p "$CLAUDE_PROJECT_DIR"` (EDP estates: `-p "${EDP_BRAIN_ROOT:-$CLA
 - curate the relation vocabulary → `cerebro relation add <name> [--class c] | list | rm <name>`
 
 **Retrieve (read)**
-- need context on a topic → `cerebro recall "<query>"` — composite-scored, THE default retrieval; `--prime` for session-start selection
+- need context on a topic → `cerebro recall "<query>"` — composite-scored, THE default retrieval; `--prime` for session-start selection; `--compact` for a budgeted one-line index
 - pure semantic similarity → `cerebro search "<query>" [--limit N --threshold 0.x]` — vector lane only
-- inspect one memory + its edges → `cerebro get <id> [--with-provenance] [--as-of <time>]` — JSON carries origin/provenance/anchor status
+- inspect one memory + its edges → `cerebro get <id> [--with-provenance] [--as-of <time>]` — full content behind a prime/compact index line; JSON carries origin/provenance/anchor status
 - browse or filter → `cerebro list [--type t] [--status s] [--subtype x]`
 
 **Feedback (close the loop — do this after acting on a recall)**
@@ -72,7 +72,7 @@ Always pass `-p "$CLAUDE_PROJECT_DIR"` (EDP estates: `-p "${EDP_BRAIN_ROOT:-$CLA
 <!-- cerebro:capabilities:end -->
 
 ### Automatic behavior
-- Session start: recent memories are loaded via hook (reliable additionalContext channel)
+- Session start: a compact index of selected memories (one line each, kept under Claude Code's 10,000-character hook cap) is injected via hook; run `cerebro get <id>` for any memory's full content
 - First prompt fallback: if the session-start prime was not delivered, memories are injected on your first prompt
 - Post-compaction: the primed flag is cleared so memories re-load after compaction
 - Session end: garbage collection and metrics ingest run automatically

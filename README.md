@@ -108,7 +108,7 @@ cerebro stats
 | `get` | Retrieve a node with its edges |
 | `update` | Modify an existing node's content or importance |
 | `list` | List nodes with optional filters |
-| `recall` | Composite-scored retrieval (supports `--prime` for session start) |
+| `recall` | Composite-scored retrieval (supports `--prime` for session start, `--compact` for a budgeted one-line index) |
 | `search` | Raw vector similarity search |
 | `edge` | Create a relationship between nodes |
 | `reinforce` | Increment access count on a memory |
@@ -264,6 +264,8 @@ Available settings:
 | `bm25_enabled` | `true` | BM25/FTS5 keyword recall — always-on when the binary has the `fts5` build tag. `false` is an eval/diagnostic seam, not a feature toggle (see below) |
 | `expand_threshold` | 0.75 | Skip graph expansion when the top-1 vector cosine similarity strictly exceeds this value (range `[0,1]`; `0.0` disables — see below) |
 | `expand_spread_threshold` | 0.0 | Skip graph expansion when the full top-K similarity spread (top-1 − top-K) is strictly below this value (range `[0,1]`; `0.0` = off, the shipped default — see below) |
+| `prime_budget` | 9500 | Byte budget for the session-start prime (`hook prime`, `recall --prime --compact`), range 2000–10000. The default keeps it under Claude Code's 10,000-character hook cap; an out-of-range stored value falls back to the default |
+| `recall_budget` | 9500 | Byte budget for query-mode `recall --compact`, range 2000–10000 |
 
 Config values travel with the brain — they are preserved across `export`/`import`.
 

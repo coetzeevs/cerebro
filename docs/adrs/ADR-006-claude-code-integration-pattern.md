@@ -3,6 +3,8 @@
 ## Status
 Accepted
 
+**Amended by:** ADR-018 (agentic-thnd): the session-start prime is a budgeted compact index under Claude Code's 10,000-character hook cap, rendered in-process; prime stdout is no longer injected whole.
+
 ## Context
 
 Cerebro's original architecture (sections 6, 8) described a generic orchestrator integration where Cerebro handles memory operations end-to-end — including LLM-powered reconciliation (ADD/UPDATE/DELETE/NOOP) and consolidation (episodes → concepts/procedures/reflections). This design assumed Cerebro would embed its own LLM provider for the "thinking" parts of memory management.

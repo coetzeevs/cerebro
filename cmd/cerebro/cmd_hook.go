@@ -12,7 +12,7 @@ package main
 // event for the same session. Hook events are sequential per session; the
 // double-fire race window is microseconds and the state writes converge.
 //
-//	cerebro hook prime        — session-start prime (recall --prime banner);
+//	cerebro hook prime        — session-start prime (budgeted compact index);
 //	                            no-ops if already primed this session
 //	cerebro hook post-compact — clears the primed flag so the next prime
 //	                            re-fires (post-compaction context recovery)
@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/coetzeevs/cerebro/brain"
+	"github.com/coetzeevs/cerebro/internal/store"
 	"github.com/spf13/cobra"
 )
 
@@ -80,28 +81,70 @@ type hookSessionState struct {
 // hookPrimeEventFlag selects the emission channel for `hook prime`.
 var hookPrimeEventFlag string
 
-// Work runners are seams so the guard machinery is unit-testable without
-// invoking the real prime/gc/ingest paths. hookPrimeWork returns primed=true
-// only when memories were actually delivered — the guard records session
-// state ONLY then, so an undelivered prime retries on the next hook instead
-// of silently marking the session primed (the v3.3.0 regression, agentic-kpko).
-var hookPrimeWork = func(event string) (bool, error) {
+// hookPrimeSelect is the prime selection seam, so tests can observe the
+// resolved limit and force a selection failure.
+var hookPrimeSelect = selectPrime
+
+// Work runners (hookPrimeWork, hookSessionEndWork) are seams so the guard
+// machinery is unit-testable without invoking the real prime/gc/ingest paths.
+// hookPrimeWork returns primed=true only when memories were actually
+// delivered — the guard records session state ONLY then, so an undelivered
+// prime retries on the next hook instead of silently marking the session
+// primed (the v3.3.0 regression, agentic-kpko).
+//
+// The prime runs in-process (agentic-thnd, ADR-018): select WITHOUT stamping,
+// render the budgeted compact index, print it, then stamp last_surfaced for
+// exactly the ids that were printed. The previous re-exec of
+// `recall --prime` stamped every selected memory in the child before any
+// budget could apply, so stamps recorded deliveries that never happened.
+//
+// Any panic is recovered into (false, nil): the session stays unprimed and
+// retries on the next hook, and the process exits 0. An escaping Go panic
+// exits 2, which Claude Code treats as "block the prompt" on UserPromptSubmit
+// (https://code.claude.com/docs/en/hooks, exit code 2) — far worse than a
+// missed prime. Output is a single Print of a complete string, so a panic
+// before it leaves stdout empty.
+var hookPrimeWork = func(event string) (primed bool, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			fmt.Fprintf(os.Stderr, "cerebro: prime skipped after internal error: %v\n", r)
+			primed, err = false, nil
+		}
+	}()
 	proj := resolveProjectDir()
-	md := ""
-	out, err := exec.Command(selfExecutable(), "recall", "--prime", "--format", "md", "-p", proj).Output() //nolint:gosec // argv-array, no shell
-	if err == nil {
-		md = string(out)
+	var nodes []store.Node
+	budget := defaultCompactBudget
+	var b *brain.Brain
+	if _, err := os.Stat(brain.ProjectPath(proj)); err == nil {
+		// Any open/select failure degrades to "nothing selected" (unprimed,
+		// retried on the next hook), as the re-exec's error path did.
+		if opened, err := brain.Open(brain.ProjectPath(proj)); err == nil {
+			b = opened
+			defer func() { _ = b.Close() }()
+			limit := resolveConfigInt(b.Store(), "prime_limit", 20)
+			if limit < 1 {
+				limit = 20 // stored value bypassed validation (e.g. import)
+			}
+			limit = clampPrimeLimit(b, limit)
+			budget = resolveBudget(b.Store(), "prime_budget")
+			nodes = hookPrimeSelect(b, limit)
+		}
 	}
-	rendered, primed := renderPrimeOutput(event, md, proj)
+	rendered, delivered := renderPrimeOutput(event, nodes, budget, proj)
 	if rendered != "" {
 		fmt.Print(rendered)
 	}
-	return primed, nil
+	if b != nil && len(delivered) > 0 {
+		_ = b.Store().TouchSurfaced(delivered) // best-effort, as before
+	}
+	return len(delivered) > 0, nil
 }
 
 // primePayload is the SessionStart JSON emission shape (Claude Code hooks
-// protocol: exit 0 + JSON; additionalContext is the reliable model-context
-// channel, systemMessage the UI notice).
+// protocol: exit 0 + JSON). additionalContext carries the model-facing text
+// and systemMessage the UI notice; Claude Code caps each field at 10,000
+// characters and replaces overflow with a file path plus a 2,000-character
+// preview (https://code.claude.com/docs/en/hooks), hence the budgeted render.
 type primePayload struct {
 	SystemMessage      string `json:"systemMessage"`
 	HookSpecificOutput struct {
@@ -110,22 +153,23 @@ type primePayload struct {
 	} `json:"hookSpecificOutput"`
 }
 
-// renderPrimeOutput renders the prime emission for one hook event. Pure over
-// (event, primeMD, projectDir) apart from reading the GC log and checking
-// brain-file existence — unit-testable without the recall re-exec.
-func renderPrimeOutput(event, primeMD, projectDir string) (out string, primed bool) {
-	trimmed := strings.TrimSpace(primeMD)
+// renderPrimeOutput renders the prime emission for one hook event and returns
+// the ids it delivered. Pure over (event, nodes, budget, projectDir) apart
+// from reading the GC log tail and checking brain-file existence. The
+// model-facing text (additionalContext at sessionstart, the whole stdout
+// otherwise) is at most budget UTF-8 bytes.
+func renderPrimeOutput(event string, nodes []store.Node, budget int, projectDir string) (out string, delivered []string) {
 	sessionStart := event == "sessionstart"
 
-	if trimmed == "" {
+	if len(nodes) == 0 {
 		// Distinguish "no brain" (worth a one-time notice at session start)
 		// from "brain exists, nothing recalled" (stay silent; the
 		// UserPromptSubmit fallback may retry). Never primed either way.
 		if !sessionStart {
-			return "", false
+			return "", nil
 		}
 		if _, err := os.Stat(brain.ProjectPath(projectDir)); err == nil {
-			return "", false
+			return "", nil
 		}
 		var p primePayload
 		p.SystemMessage = "Cerebro: no brain initialized. Run: cerebro init"
@@ -133,40 +177,28 @@ func renderPrimeOutput(event, primeMD, projectDir string) (out string, primed bo
 		p.HookSpecificOutput.AdditionalContext = "Cerebro: no brain initialized for this project. Run: cerebro init"
 		data, err := json.Marshal(p)
 		if err != nil {
-			return "", false
+			return "", nil
 		}
-		return string(data) + "\n", false
+		return string(data) + "\n", nil
 	}
 
-	count := 0
-	for _, line := range splitLines(primeMD) {
-		if len(line) > 12 && line[0] == '#' && line[1] == '#' {
-			count++
-		}
+	text, delivered := renderCompactIndex(compactPrimeBanner, compactFrameHeader("importance", compactProjectSource),
+		primeRecords(nodes), budget, gcNotice(projectDir))
+	if len(delivered) == 0 {
+		return "", nil
 	}
-	banner := fmt.Sprintf("Cerebro online. %d memories loaded.", count)
-
-	gcTail := ""
-	gcLog := filepath.Join(projectDir, ".cerebro-gc.log")
-	if data, err := os.ReadFile(gcLog); err == nil && len(data) > 0 { //nolint:gosec // project-local log path
-		lines := splitLines(string(data))
-		if len(lines) > 0 {
-			gcTail = fmt.Sprintf("\n\n--- CEREBRO GC EVICTIONS (review and re-add if needed) ---\n%s", lines[len(lines)-1])
-		}
+	if !sessionStart {
+		return text, delivered
 	}
-
-	if sessionStart {
-		var p primePayload
-		p.SystemMessage = banner
-		p.HookSpecificOutput.HookEventName = "SessionStart"
-		p.HookSpecificOutput.AdditionalContext = fmt.Sprintf("%s\n\n%s%s", banner, primeMD, gcTail)
-		data, err := json.Marshal(p)
-		if err != nil {
-			return "", false
-		}
-		return string(data) + "\n", true
+	var p primePayload
+	p.SystemMessage = text[:strings.IndexByte(text, '\n')] // the banner line
+	p.HookSpecificOutput.HookEventName = "SessionStart"
+	p.HookSpecificOutput.AdditionalContext = text
+	data, err := json.Marshal(p)
+	if err != nil {
+		return "", nil
 	}
-	return fmt.Sprintf("%s\n\n%s%s", banner, primeMD, gcTail), true
+	return string(data) + "\n", delivered
 }
 
 var hookSessionEndWork = func() error {
@@ -184,23 +216,6 @@ func selfExecutable() string {
 		return exe
 	}
 	return "cerebro"
-}
-
-func splitLines(s string) []string {
-	var out []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			if i > start {
-				out = append(out, s[start:i])
-			}
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		out = append(out, s[start:])
-	}
-	return out
 }
 
 // hookStdin is the hook input stream; a var so tests can feed synthetic

@@ -53,11 +53,11 @@ var usageSections = []usageSection{
 	}},
 	{"Retrieve (read)", []usageEntry{
 		{"need context on a topic", "recall",
-			"`cerebro recall \"<query>\"` — composite-scored, THE default retrieval; `--prime` for session-start selection"},
+			"`cerebro recall \"<query>\"` — composite-scored, THE default retrieval; `--prime` for session-start selection; `--compact` for a budgeted one-line index"},
 		{"pure semantic similarity", "search",
 			"`cerebro search \"<query>\" [--limit N --threshold 0.x]` — vector lane only"},
 		{"inspect one memory + its edges", "get",
-			"`cerebro get <id> [--with-provenance] [--as-of <time>]` — JSON carries origin/provenance/anchor status"},
+			"`cerebro get <id> [--with-provenance] [--as-of <time>]` — full content behind a prime/compact index line; JSON carries origin/provenance/anchor status"},
 		{"browse or filter", "list",
 			"`cerebro list [--type t] [--status s] [--subtype x]`"},
 	}},
